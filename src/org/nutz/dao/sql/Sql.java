@@ -1,7 +1,10 @@
 package org.nutz.dao.sql;
 
+import java.util.Map;
+
 import org.nutz.dao.Condition;
 import org.nutz.dao.entity.Entity;
+import org.nutz.dao.entity.Record;
 import org.nutz.dao.jdbc.ValueAdaptor;
 
 /**
@@ -31,6 +34,14 @@ public interface Sql extends DaoStatement {
     Sql setVar(String name, Object value);
 
     /**
+     * 批量设置vars
+     * @param vars 参数集合
+     * @return 原Sql对象,用于链式调用
+     * @see #params()
+     */
+    Sql setVars(Map<String,Object> vars);
+
+    /**
      * 所谓"参数"，就是当 Sql 对象转换成 PreparedStatement 对象前，会被填充成 ? 的占位符
      * <p>
      * 集合是一个个的名值对，你设置了值的地方，会在执行时，被设置到 PreparedStatement中。<br>
@@ -48,6 +59,14 @@ public interface Sql extends DaoStatement {
      * @see #params()
      */
     Sql setParam(String name, Object value);
+
+    /**
+     * 批量设置params
+     * @param params 参数集合
+     * @return 原Sql对象,用于链式调用
+     * @see #params()
+     */
+    Sql setParams(Map<String,Object> params);
 
     /**
      * 手动为某个语句参数设置适配器。
@@ -114,7 +133,29 @@ public interface Sql extends DaoStatement {
      */
     Sql duplicate();
 
-    public void setSourceSql(String sql) ;
+    /**
+     * 设置原始SQL,将重新解析里面的占位符
+     * @param sql
+     */
+    void setSourceSql(String sql);
     
-    public String getSourceSql() ;
+    /**
+     * 获取原始SQL
+     */
+    String getSourceSql();
+    
+    /**
+     * 获取存储过程的出参
+     */
+    Record getOutParams();
+    
+    /**
+     * 修改原有的占位符(默认是$和@),并重新解析.仅作用于当前SQL对象
+     * @param param 参数占位符,默认是@
+     * @param var 变量占位符,默认是$
+     * @return 当前SQL对象
+     */
+    Sql changePlaceholder(char param, char var);
+    
+    Sql appendSourceSql(String ext);
 }

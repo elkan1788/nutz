@@ -105,8 +105,7 @@ public class SqlTemplate {
                            Map<String, Object> vars,
                            List<Map<String, Object>> batchValues) {
         Sql sqlObj = null;
-        boolean hasBatchValues = batchValues != null && batchValues.size() > 0;
-        if (hasBatchValues) {
+        if (batchValues != null && batchValues.size() > 0) {
             sqlObj = createSqlObj(sql, batchValues.get(0));
             for (Map<String, Object> params : batchValues) {
                 Map<String, Object> newParams = paramProcess(params);
@@ -541,7 +540,7 @@ public class SqlTemplate {
         return newParams;
     }
 
-    private String inSqlProcess(String paramName, Object paramObj) {
+    private static String inSqlProcess(String paramName, Object paramObj) {
         int len = Array.getLength(paramObj);
         StringBuilder inSqlExp = new StringBuilder();
         for (int i = 0; i < len; i++) {
@@ -552,7 +551,7 @@ public class SqlTemplate {
         return inSqlExp.toString();
     }
 
-    private void inParamProcess(String paramName, Object paramObj, Map<String, Object> newParams) {
+    private static void inParamProcess(String paramName, Object paramObj, Map<String, Object> newParams) {
         int len = Array.getLength(paramObj);
         for (int i = 0; i < len; i++) {
             String inParamName = paramName + i;

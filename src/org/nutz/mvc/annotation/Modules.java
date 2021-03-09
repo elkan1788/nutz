@@ -32,16 +32,17 @@ public @interface Modules {
     /**
      * 是否搜索模块类同包以及子包的其他类
      */
-    boolean scanPackage() default false;
+    boolean scanPackage() default true;
 
     /**
      * 支持你实现一个模块加载器，然后
      * 
-     * <pre>
+     * <code>
      * @Modules(by={"ioc:myLoader", "com.my.app.MyModuleLoader"})
-     * </pre>
+     * </code>
      * 
      * @return 用哪些动态加载器加载模块
      */
     String[] by() default {};
+    
 }

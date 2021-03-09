@@ -18,7 +18,6 @@ import org.nutz.resource.Scans;
 /**
  * 从 Json 文件中读取配置信息。 支持 Merge with parent ，利用 MapLoader
  * <p>
- * 注，如果 JSON 配置文件被打入 Jar 包中，这个加载器将不能正常工作
  * 
  * @author zozoh(zozohtnt@gmail.com)
  * @author wendal(wendal1985@gmail.com)
@@ -28,7 +27,12 @@ public class JsonLoader extends MapLoader {
     
     private static final Log log = Logs.get();
     
-    private String[] paths;
+    protected String[] paths;
+    
+    /**
+     * 供子类继承用.
+     */
+    protected JsonLoader(){}
 
     public JsonLoader(Reader reader) {
         loadFromReader(reader);
@@ -41,7 +45,8 @@ public class JsonLoader extends MapLoader {
         List<NutResource> list = Scans.me().loadResource("^(.+[.])(js|json)$", paths);
         try {
             for (NutResource nr : list) {
-            	log.debugf("loading ioc js config from [%s]", nr.getName());
+                if (log.isDebugEnabled())
+                    log.debugf("loading [%s]", nr.getName());
                 loadFromReader(nr.getReader());
             }
         }
@@ -53,7 +58,7 @@ public class JsonLoader extends MapLoader {
         this.paths = paths;
     }
 
-    private void loadFromReader(Reader reader) {
+    protected void loadFromReader(Reader reader) {
         String s = Lang.readAll(reader);
         Map<String, Map<String, Object>> map = (Map<String, Map<String, Object>>) Json.fromJson(s);
         if (null != map && map.size() > 0)
@@ -63,6 +68,10 @@ public class JsonLoader extends MapLoader {
     public String toString() {
     	if (paths == null)
     		return super.toString();
-    	return "/*JsonLoader" + Arrays.toString(paths) + "*/\n" + Json.toJson(map);
+    	return "/*" + getClass().getSimpleName() + Arrays.toString(paths) + "*/\n" + Json.toJson(map);
+    }
+    
+    public String[] getPaths() {
+        return paths;
     }
 }

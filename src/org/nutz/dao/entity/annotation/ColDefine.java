@@ -6,6 +6,8 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
+import org.nutz.dao.jdbc.ValueAdaptor;
+
 /**
  * 给出字段的更加精确的数据库类型描述，方便 Dao 创建数据表
  * 
@@ -22,7 +24,7 @@ public @interface ColDefine {
 	 * 
 	 * @see org.nutz.dao.entity.annotation.ColType
 	 */
-	ColType type() default ColType.VARCHAR;
+	ColType type() default ColType.AUTO;
 
 	/**
 	 * 宽度/长度, 例如定义字符串长度为1024 就写  width=1024
@@ -51,7 +53,7 @@ public @interface ColDefine {
 
 	/**
 	 * 自定义数据库字段类型, 例如写  customType="image" 等, 然后<b>请务必再设置type属性!!</b>
-	 * @return
+	 * @return 自定义数据类型,可以任意合法的类型声明,仅用于建表
 	 */
 	String customType() default "";
 
@@ -64,5 +66,10 @@ public @interface ColDefine {
 	 * 描述当前字段是否可更新
 	 */
 	boolean update() default true;
+	
+	/**
+	 * 自定义ValueAdaptor,定制一切类型的jdbc赋值或取值逻辑
+	 */
 
+	Class<? extends ValueAdaptor> adaptor() default ValueAdaptor.class;
 }

@@ -3,7 +3,25 @@ package org.nutz.dao;
 import org.nutz.castor.Castors;
 import org.nutz.dao.impl.sql.NutSql;
 import org.nutz.dao.impl.sql.ValueEscaper;
-import org.nutz.dao.impl.sql.callback.*;
+import org.nutz.dao.impl.sql.callback.FetchBlobCallback;
+import org.nutz.dao.impl.sql.callback.FetchBooleanCallback;
+import org.nutz.dao.impl.sql.callback.FetchDoubleCallback;
+import org.nutz.dao.impl.sql.callback.FetchEntityCallback;
+import org.nutz.dao.impl.sql.callback.FetchFloatCallback;
+import org.nutz.dao.impl.sql.callback.FetchIntegerCallback;
+import org.nutz.dao.impl.sql.callback.FetchLongCallback;
+import org.nutz.dao.impl.sql.callback.FetchMapCallback;
+import org.nutz.dao.impl.sql.callback.FetchRecordCallback;
+import org.nutz.dao.impl.sql.callback.FetchStringCallback;
+import org.nutz.dao.impl.sql.callback.FetchTimestampCallback;
+import org.nutz.dao.impl.sql.callback.QueryBooleanCallback;
+import org.nutz.dao.impl.sql.callback.QueryEntityCallback;
+import org.nutz.dao.impl.sql.callback.QueryIntCallback;
+import org.nutz.dao.impl.sql.callback.QueryLongCallback;
+import org.nutz.dao.impl.sql.callback.QueryMapCallback;
+import org.nutz.dao.impl.sql.callback.QueryRecordCallback;
+import org.nutz.dao.impl.sql.callback.QueryStringArrayCallback;
+import org.nutz.dao.impl.sql.callback.QueryStringCallback;
 import org.nutz.dao.sql.Sql;
 import org.nutz.dao.sql.SqlCallback;
 import org.nutz.lang.Mirror;
@@ -336,8 +354,25 @@ public abstract class Sqls {
             return new QueryBooleanCallback();
         }
         
+        /**
+         * 与record()类似,但区分大小写
+         */
+        public SqlCallback map() {
+            return FetchMapCallback.me;
+        }
+        /**
+         * 与records()类似,但区分大小写
+         * @return List<Map>回调
+         */
         public SqlCallback maps() {
         	return QueryMapCallback.me;
+        }
+
+        /**
+         * @return 从 ResultSet 获得一个blob的回调对象
+         */
+        public SqlCallback blob() {
+            return new FetchBlobCallback();
         }
     }
 

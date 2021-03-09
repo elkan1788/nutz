@@ -10,8 +10,8 @@ import java.io.FileWriter;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.Reader;
+import java.io.Serializable;
 import java.math.BigDecimal;
 import java.sql.Blob;
 import java.sql.Clob;
@@ -22,7 +22,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
-import java.util.Calendar;
+import java.time.*;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.sql.DataSource;
 
@@ -32,6 +34,7 @@ import org.nutz.dao.entity.annotation.ColType;
 import org.nutz.dao.impl.entity.field.NutMappingField;
 import org.nutz.dao.impl.jdbc.BlobValueAdaptor;
 import org.nutz.dao.impl.jdbc.ClobValueAdaptor;
+import org.nutz.dao.util.Daos;
 import org.nutz.filepool.FilePool;
 import org.nutz.json.Json;
 import org.nutz.lang.Files;
@@ -46,7 +49,7 @@ import org.nutz.trans.Trans;
 
 /**
  * 提供一些与 JDBC 有关的帮助函数
- * 
+ *
  * @author zozoh(zozohtnt@gmail.com) TODO 合并到NutConfig
  */
 public abstract class Jdbcs {
@@ -54,6 +57,8 @@ public abstract class Jdbcs {
     private static final Log log = Logs.get();
 
     private static final JdbcExpertConfigFile conf;
+
+    public static Map<String, ValueAdaptor> customValueAdaptorMap = new ConcurrentHashMap<String, ValueAdaptor>();
 
     /*
      * 根据配置文件获取 experts 的列表
@@ -65,10 +70,10 @@ public abstract class Jdbcs {
             File f = Files.findFile("nutz_jdbc_experts.js");// TODO 不可配置??
             // 如果没有则使用默认的映射文件
             if (null == f) {
-                conf = Json.fromJson(JdbcExpertConfigFile.class, new InputStreamReader(Jdbcs.class.getResourceAsStream("nutz_jdbc_experts.js"))).init();
+                conf = Json.fromJson(JdbcExpertConfigFile.class, Streams.utf8r(Jdbcs.class.getResourceAsStream("nutz_jdbc_experts.js"))).init();
             } else
                 conf = Json.fromJson(JdbcExpertConfigFile.class,Streams.fileInr("nutz_jdbc_experts.js")).init();
-            
+
             for (String key : conf.getExperts().keySet()) {
                 // 检查一下正则表达式是否正确
                 // 在conf类中自行检查
@@ -87,15 +92,15 @@ public abstract class Jdbcs {
 
     /**
      * 针对一个数据源，返回其专属的 JdbcExpert
-     * 
+     *
      * @param ds
      *            数据源
      * @return 该数据库的特殊驱动封装类
-     * 
+     *
      * @see org.nutz.dao.jdbc.Jdbcs#getExpert(String, String)
      */
     public static JdbcExpert getExpert(DataSource ds) {
-    	log.info("Get Connection from DataSource for JdbcExpert");
+        log.info("Get Connection from DataSource for JdbcExpert, if you lock at here, check your database server and configure");
         Connection conn = null;
         try {
             conn = Trans.getConnectionAuto(ds);
@@ -118,7 +123,7 @@ public abstract class Jdbcs {
      * 映射的规则存放在 JSON 文件 "nutz_jdbc_experts.js" 中，你可以通过建立这个文件修改 Nutz 的默认映射规则
      * <p>
      * 比如下面的文件，将支持两种数据库
-     * 
+     *
      * <pre>
      * {
      *   experts : {
@@ -131,22 +136,22 @@ public abstract class Jdbcs {
      *   }
      * }
      * </pre>
-     * 
+     *
      * 本函数传入的两个参数将会被:
-     * 
+     *
      * <pre>
      * String.format(&quot;%s::NUTZ_JDBC::%s&quot;, productName, version);
      * </pre>
-     * 
+     *
      * 并被你声明的正则表达式(expert 段下的键值)依次匹配，如果匹配上了，就会用相应的类当作驱动封装类
-     * 
+     *
      * @param productName
      *            数据库产品名称
      * @param version
      *            数据库版本号
-     * 
+     *
      * @return 该数据库的特殊驱动封装类
-     * 
+     *
      * @see java.sql.Connection#getMetaData()
      * @see java.sql.DatabaseMetaData#getDatabaseProductName()
      */
@@ -169,7 +174,22 @@ public abstract class Jdbcs {
         return getAdaptor(Mirror.me(obj));
     }
 
+    /**
+     * 注册一个自定义ValueAdaptor,若adaptor为null,则取消注册
+     * @param className 类名
+     * @param adaptor 值适配器实例,若为null,则取消注册
+     * @return 原有的值适配器
+     */
+    public static ValueAdaptor register(String className, ValueAdaptor adaptor) {
+        if (adaptor == null)
+            return customValueAdaptorMap.remove(className);
+        return customValueAdaptorMap.put(className, adaptor);
+    }
+
     public static ValueAdaptor getAdaptor(Mirror<?> mirror) {
+        ValueAdaptor custom = customValueAdaptorMap.get(mirror.getType().getName());
+        if (custom != null)
+            return custom;
         // String and char
         if (mirror.isStringLike())
             return Jdbcs.Adaptor.asString;
@@ -233,7 +253,10 @@ public abstract class Jdbcs {
             return Jdbcs.Adaptor.asBinaryStream;
         if (mirror.isOf(Reader.class))
             return Jdbcs.Adaptor.asReader;
-
+        if (mirror.isLocalDateLike())
+            return Adaptor.asLocalDate;
+        if (mirror.isLocalDateTimeLike())
+            return Jdbcs.Adaptor.asLocalDateTime;
         // 默认情况
         return Jdbcs.Adaptor.asString;
     }
@@ -249,7 +272,7 @@ public abstract class Jdbcs {
 
             public void set(PreparedStatement stat, Object obj, int i) throws SQLException {
                 stat.setNull(i, Types.NULL);
-            };
+            }
 
         };
 
@@ -620,12 +643,7 @@ public abstract class Jdbcs {
                 if (null == obj) {
                     stat.setNull(i, Types.INTEGER);
                 } else {
-                    int v;
-                    if (obj instanceof Enum<?>)
-                        v = ((Enum<?>) obj).ordinal();
-                    else
-                        v = Castors.me().castTo(obj, int.class);
-                    stat.setInt(i, v);
+                    stat.setInt(i, Castors.me().castTo(obj, int.class));
                 }
             }
         };
@@ -702,7 +720,7 @@ public abstract class Jdbcs {
                 if (null == obj) {
                     stat.setNull(index, Types.BINARY);
                 } else {
-                	
+
                 	if (obj instanceof ByteArrayInputStream) {
                 		stat.setBinaryStream(index, (InputStream)obj, ((ByteArrayInputStream)obj).available());
                 	} else if (obj instanceof InputStream) {
@@ -745,16 +763,53 @@ public abstract class Jdbcs {
                 }
             }
         };
+        
+        
+        public static final ValueAdaptor asLocalDateTime = new ValueAdaptor() {
+            
+            public Object get(ResultSet rs, String colName) throws SQLException {
+                Timestamp ts = rs.getTimestamp(colName);
+                return null == ts ? null : LocalDateTime.ofInstant(Instant.ofEpochMilli(ts.getTime()), ZoneId.systemDefault());
+            }
+
+            public void set(PreparedStatement stat, Object obj, int i) throws SQLException {
+                Timestamp v;
+                if (null == obj) {
+                    stat.setNull(i, Types.TIMESTAMP);
+                } else {
+                    v = Timestamp.valueOf((LocalDateTime)obj);
+                    stat.setTimestamp(i, v);
+                }
+            }
+        };
+    
+        public static final ValueAdaptor asLocalDate = new ValueAdaptor() {
+        
+            public Object get(ResultSet rs, String colName) throws SQLException {
+                Timestamp ts = rs.getTimestamp(colName);
+                return null == ts ? null : ts.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+            }
+        
+            public void set(PreparedStatement stat, Object obj, int i) throws SQLException {
+                Timestamp v;
+                if (null == obj) {
+                    stat.setNull(i, Types.TIMESTAMP);
+                } else {
+                    v = Timestamp.valueOf(((LocalDate)obj).atStartOfDay(ZoneId.systemDefault()).toLocalDateTime());
+                    stat.setTimestamp(i, v);
+                }
+            }
+        };
     }
 
     /**
      * 根据字段现有的信息，尽可能猜测一下字段的数据库类型
-     * 
+     *
      * @param ef
      *            映射字段
      */
     public static void guessEntityFieldColumnType(NutMappingField ef) {
-        Mirror<?> mirror = ef.getTypeMirror();
+        Mirror<?> mirror = ef.getMirror();
 
         // 整型
         if (mirror.isInt()) {
@@ -764,7 +819,7 @@ public abstract class Jdbcs {
         // 字符串
         else if (mirror.isStringLike() || mirror.is(Email.class)) {
             ef.setColumnType(ColType.VARCHAR);
-            ef.setWidth(50);
+            ef.setWidth(Daos.DEFAULT_VARCHAR_WIDTH);
         }
         // 长整型
         else if (mirror.isLong()) {
@@ -799,7 +854,7 @@ public abstract class Jdbcs {
             ef.setColumnType(ColType.TIME);
         }
         // 日期时间
-        else if (mirror.isOf(Calendar.class) || mirror.is(java.util.Date.class)) {
+        else if (mirror.isOf(Calendar.class) || mirror.is(java.util.Date.class) || mirror.isLocalDateTimeLike()) {
             ef.setColumnType(ColType.DATETIME);
         }
         // 大数
@@ -839,20 +894,25 @@ public abstract class Jdbcs {
          * 上面的都不是？ 那就当作字符串好了，反正可以 toString
          */
         else {
-            if (log.isDebugEnabled())
-                log.debugf("take field '%s(%s)'(%s) as VARCHAR(50)",
+            if (log.isDebugEnabled()&& ef.getEntity() != null && ef.getEntity().getType() != null)
+                log.debugf("take field '%s(%s)'(%s) as VARCHAR(%d)",
                            ef.getName(),
                            Lang.getTypeClass(ef.getType()).getName(),
-                           ef.getEntity().getType().getName());
+                           ef.getEntity().getType().getName(),
+                           Daos.DEFAULT_VARCHAR_WIDTH);
             ef.setColumnType(ColType.VARCHAR);
-            ef.setWidth(50);
+            ef.setWidth(Daos.DEFAULT_VARCHAR_WIDTH);
         }
     }
 
     public static FilePool getFilePool() {
         return conf.getPool();
     }
-    
+
+    public static void setFilePool(FilePool pool) {
+        conf.setPool(pool);
+    }
+
     public static void setCharacterStream(int index, Object obj, PreparedStatement stat) throws SQLException {
         try {
             File f = Jdbcs.getFilePool().createFile(".dat");
@@ -866,42 +926,55 @@ public abstract class Jdbcs {
             throw Lang.wrapThrow(e);
         }
     }
+    
+    public static JdbcExpertConfigFile getConf() {
+        return conf;
+    }
 }
 
-class ReadOnceInputStream extends FilterInputStream {
-	
+class ReadOnceInputStream extends FilterInputStream implements Serializable {
+
+	private static final long serialVersionUID = -2601685798106193691L;
+
 	private File f;
-	
+
 	public boolean readed;
 
 	protected ReadOnceInputStream(File f) throws FileNotFoundException {
 		super(new FileInputStream(f));
 		this.f = f;
 	}
-	
+
 	public int read() throws IOException {
 		readed = true;
 		return super.read();
 	}
-	
+
 	public int read(byte[] b) throws IOException {
 		readed = true;
 		return super.read(b);
 	}
-	
+
 	public int read(byte[] b, int off, int len) throws IOException {
 		readed = true;
 		return super.read(b, off, len);
 	}
-	
+
 	public void close() throws IOException {
 		super.close();
 		f.delete();
 	}
-	
+
 	protected void finalize() throws Throwable {
 		f.delete();
 		super.finalize();
 	}
-	
+
+    private void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
+        Streams.writeAndClose(out, new FileInputStream(f));
+    }
+    private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException{
+        f = Jdbcs.getFilePool().createFile(".dat");
+        Files.write(f, in);
+    }
 }

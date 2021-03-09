@@ -76,7 +76,7 @@ public class GBaseJdbcExpert extends AbstractJdbcExpert {
 		for (MappingField mf : en.getMappingFields()) {
             if (mf.isReadonly())
                 continue;
-			sb.append('\n').append(mf.getColumnName());
+			sb.append('\n').append(mf.getColumnNameInSql());
 			sb.append(' ').append(evalFieldType(mf));
 			// 非主键的 @Name，应该加入唯一性约束
 			if (mf.isName() && en.getPkType() != PkType.NAME) {
@@ -109,7 +109,7 @@ public class GBaseJdbcExpert extends AbstractJdbcExpert {
 					}
 				} else {
 					if (mf.hasDefaultValue())
-						sb.append(" DEFAULT '").append(getDefaultValue(mf)).append("'");
+					    addDefaultValue(sb, mf);
 				}
 			}
 
@@ -125,7 +125,7 @@ public class GBaseJdbcExpert extends AbstractJdbcExpert {
 			sb.append('\n');
 			sb.append("PRIMARY KEY (");
 			for (MappingField pk : pks) {
-				sb.append(pk.getColumnName()).append(',');
+				sb.append(pk.getColumnNameInSql()).append(',');
 			}
 			sb.setCharAt(sb.length() - 1, ')');
 			sb.append("\n ");

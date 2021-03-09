@@ -1,9 +1,13 @@
 package org.nutz.lang;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,11 +24,14 @@ import javax.xml.xpath.XPathFactory;
 
 import org.nutz.lang.util.Callback2;
 import org.nutz.lang.util.NutMap;
+import org.nutz.lang.util.Regex;
+import org.nutz.lang.util.Tag;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
 /**
@@ -41,7 +48,44 @@ public abstract class Xmls {
      * @throws ParserConfigurationException
      */
     public static DocumentBuilder xmls() throws ParserConfigurationException {
-        return DocumentBuilderFactory.newInstance().newDocumentBuilder();
+        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+        String FEATURE = null;
+        
+        // This is the PRIMARY defense. If DTDs (doctypes) are disallowed, almost all XML entity attacks are prevented
+        // Xerces 2 only - http://xerces.apache.org/xerces2-j/features.html#disallow-doctype-decl
+
+        FEATURE = "http://apache.org/xml/features/disallow-doctype-decl";
+        dbf.setFeature(FEATURE, true);
+
+        // If you can't completely disable DTDs, then at least do the following:
+        // Xerces 1 - http://xerces.apache.org/xerces-j/features.html#external-general-entities
+
+        // Xerces 2 - http://xerces.apache.org/xerces2-j/features.html#external-general-entities
+
+        // JDK7+ - http://xml.org/sax/features/external-general-entities 
+        FEATURE = "http://xml.org/sax/features/external-general-entities";
+        dbf.setFeature(FEATURE, false);
+
+        // Xerces 1 - http://xerces.apache.org/xerces-j/features.html#external-parameter-entities
+
+        // Xerces 2 - http://xerces.apache.org/xerces2-j/features.html#external-parameter-entities
+
+        // JDK7+ - http://xml.org/sax/features/external-parameter-entities 
+        FEATURE = "http://xml.org/sax/features/external-parameter-entities";
+        dbf.setFeature(FEATURE, false);
+
+        // Disable external DTDs as well
+        FEATURE = "http://apache.org/xml/features/nonvalidating/load-external-dtd";
+        dbf.setFeature(FEATURE, false);
+
+        // and these as well, per Timothy Morgan's 2014 paper: "XML Schema, DTD, and Entity Attacks"
+        dbf.setXIncludeAware(false);
+        dbf.setExpandEntityReferences(false);
+        return dbf.newDocumentBuilder();
+    }
+    
+    public static Document xml(InputStream ins) {
+        return xml(ins, null);
     }
 
     /**
@@ -51,9 +95,11 @@ public abstract class Xmls {
      *            XML 文件输入流
      * @return Document 对象
      */
-    public static Document xml(InputStream ins) {
+    public static Document xml(InputStream ins, Charset charset) {
         try {
-            return xmls().parse(ins);
+            if (charset == null)
+                charset = Encoding.CHARSET_UTF8;
+            return xmls().parse(new InputSource(new InputStreamReader(ins, charset)));
         }
         catch (SAXException e) {
             throw Lang.wrapThrow(e);
@@ -69,6 +115,10 @@ public abstract class Xmls {
         }
     }
 
+    public static Document xml(File xmlFile) {
+        return xml(xmlFile, null);
+    }
+    
     /**
      * 快捷的解析 XML 文件的帮助方法
      * 
@@ -76,9 +126,11 @@ public abstract class Xmls {
      *            XML 文件
      * @return Document 对象
      */
-    public static Document xml(File xmlFile) {
+    public static Document xml(File xmlFile, Charset charset) {
+        InputStream ins = null;
         try {
-            return xmls().parse(xmlFile);
+            ins = new FileInputStream(xmlFile);
+            return xml(ins, charset);
         }
         catch (Exception e) {
             throw Lang.wrapThrow(e);
@@ -286,8 +338,7 @@ public abstract class Xmls {
      * @return 一个子元素的列表
      */
     public static List<Element> children(Element ele, String regex) {
-        final List<Element> list = new ArrayList<Element>(ele.getChildNodes()
-                                                             .getLength());
+        final List<Element> list = new ArrayList<Element>(ele.getChildNodes().getLength());
         eachChildren(ele, regex, new Each<Element>() {
             public void invoke(int index, Element cld, int length) {
                 list.add(cld);
@@ -318,9 +369,7 @@ public abstract class Xmls {
      * @param callback
      *            回调
      */
-    public static void eachChildren(Element ele,
-                                    String regex,
-                                    final Each<Element> callback) {
+    public static void eachChildren(Element ele, String regex, final Each<Element> callback) {
         Xmls.eachChildren(ele, regex, callback, 0);
     }
 
@@ -341,7 +390,7 @@ public abstract class Xmls {
             if (nd instanceof Element) {
                 if (null == regex)
                     return false;
-                if (((Element) nd).getTagName().matches(regex))
+                if (Regex.match(regex, ((Element) nd).getTagName()))
                     return true;
             }
         }
@@ -428,8 +477,7 @@ public abstract class Xmls {
         NamedNodeMap nodeMap = ele.getAttributes();
         Map<String, String> attrs = new HashMap<String, String>(nodeMap.getLength());
         for (int i = 0; i < nodeMap.getLength(); i++) {
-            attrs.put(nodeMap.item(i).getNodeName(), nodeMap.item(i)
-                                                            .getNodeValue());
+            attrs.put(nodeMap.item(i).getNodeName(), nodeMap.item(i).getNodeValue());
         }
         return attrs;
     }
@@ -473,24 +521,226 @@ public abstract class Xmls {
      * @return 一个 Map 对象
      */
     public static NutMap asMap(Element ele, final boolean lowFirst) {
+        return asMap(ele, lowFirst, false);
+    }
+    public static NutMap asMap(Element ele, final boolean lowFirst, final boolean dupAsList) {
+        return asMap(ele, lowFirst, dupAsList, null);
+    }
+    public static NutMap asMap(Element ele, final boolean lowerFirst, final boolean dupAsList, final List<String> alwaysAsList) {
+        return asMap(ele, new XmlParserOpts(lowerFirst, dupAsList, alwaysAsList, false));
+    }
+    public static NutMap asMap(Element ele, final XmlParserOpts opts) {
         final NutMap map = new NutMap();
+        if (opts.isAttrAsKeyValue()) {
+            NamedNodeMap attrs = ele.getAttributes();
+            for (int i = 0; i < attrs.getLength(); i++) {
+                map.put(attrs.item(i).getNodeName(), attrs.item(i).getNodeValue());
+            }
+        }
         eachChildren(ele, new Each<Element>() {
             public void invoke(int index, Element _ele, int length)
                     throws ExitLoop, ContinueLoop, LoopException {
                 String key = _ele.getNodeName();
-                if (lowFirst)
+                if (opts.lowerFirst)
                     key = Strings.lowerFirst(key);
-                Map<String, Object> tmp = asMap(_ele, lowFirst);
+                Map<String, Object> tmp = asMap(_ele, opts);
                 if (!tmp.isEmpty()) {
-                    map.setv(key, tmp);
+                    if (opts.alwaysAsList != null && opts.alwaysAsList.contains(key)) {
+                        map.addv2(key, tmp);
+                    }
+                    else if (opts.dupAsList) {
+                        map.addv(key, tmp);
+                    }
+                    else {
+                        map.setv(key, tmp);
+                    }
                     return;
                 }
                 String val = getText(_ele);
-                if (!Strings.isBlank(val)) {
-                    map.setv(key, val);
+                if (opts.keeyBlankNode || !Strings.isBlank(val)) {
+                    if (opts.alwaysAsList != null && opts.alwaysAsList.contains(key)) {
+                        map.addv2(key, val);
+                    }
+                    else if (opts.dupAsList)
+                        map.addv(key, val);
+                    else
+                        map.setv(key, val);
                 }
             }
         });
         return map;
+    }
+
+    /**
+     * 将一个下面格式的 XML:
+     * 
+     * <pre>
+     * &lt;xml&gt;
+     * &lt;key1&gt;value1&lt;/key1&gt;
+     * &lt;key2&gt;value2&lt;/key2&gt;
+     * &lt;/xml&gt;
+     * </pre>
+     * 
+     * 转换成一个 Map
+     * 
+     * @param xml
+     *            XML 字符串
+     * 
+     * @return Map
+     */
+    public static NutMap xmlToMap(String xml) {
+        return Xmls.asMap(Xmls.xml(Lang.ins(xml)).getDocumentElement());
+    }
+    
+    public static NutMap xmlToMap(InputStream ins) {
+        return Xmls.asMap(Xmls.xml(ins).getDocumentElement());
+    }
+    
+    public static NutMap xmlToMap(InputStream ins, final boolean lowerFirst, final boolean dupAsList, final List<String> alwaysAsList) {
+        return Xmls.asMap(Xmls.xml(ins).getDocumentElement(), lowerFirst, dupAsList, alwaysAsList);
+    }
+
+    /**
+     * 将一个 Map 转换成 XML 类似:
+     * 
+     * <pre>
+     * &lt;xml&gt;
+     * &lt;key1&gt;value1&lt;/key1&gt;
+     * &lt;key2&gt;value2&lt;/key2&gt;
+     * &lt;/xml&gt;
+     * </pre>
+     * 
+     * @param map
+     *            Map
+     * @return XML 字符串
+     */
+    public static String mapToXml(Map<String, Object> map) {
+        return mapToXml("xml", map);
+    }
+    
+    public static String mapToXml(String root, Map<String, Object> map) {
+        StringBuilder sb = new StringBuilder();
+        map2Tag(root, map).toXml(sb, 0);
+        return sb.toString();
+    }
+    
+    protected static Tag map2Tag(String rootName, Map<String, Object> map) {
+        Tag rootTag = Tag.tag(rootName);
+        for (Map.Entry<String, Object> en : map.entrySet()) {
+            String key = en.getKey();
+            Object val = en.getValue();
+            List<Tag> children = obj2tag(key, val);
+            for (Tag child : children) {
+                rootTag.add(child);
+            }
+        }
+        return rootTag;
+    }
+    
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static List<Tag> obj2tag(String nodeName, Object val) {
+        List<Tag> tags = new ArrayList<Tag>();
+        if (null == val)
+            return tags;
+        if (val instanceof Map) {
+            tags.add(map2Tag(nodeName, (Map<String, Object>) val));
+        } else if (val instanceof Collection) {
+            for (Object object : (Collection)val) {
+                for (Tag tag : obj2tag(nodeName, object)) {
+                    tags.add(tag);
+                }
+            }
+        } else {
+            tags.add(Tag.tag(nodeName).setText(val.toString()));
+        }
+        return tags;
+    }
+    
+    /**
+     * 从一个 XML 元素开始，根据一条 XPath 获取一组元素
+     * 
+     * @param ele
+     *            XML 元素
+     * @param xpath
+     *            要获取的元素的 XPath
+     * @return 元素列表
+     */
+    public static List<Element> getEles(Element ele, String xpath) {
+        XPathFactory factory = XPathFactory.newInstance();
+        XPath xp = factory.newXPath();
+        try {
+            XPathExpression expression = xp.compile(xpath);
+            NodeList nodes = (NodeList) expression.evaluate(ele, XPathConstants.NODESET);
+            List<Element> list = new ArrayList<Element>();
+            int len = nodes.getLength();
+            for (int i = 0; i < len; i++) {
+                Node node = nodes.item(i);
+                if (node instanceof Element) {
+                    list.add((Element)node);
+                }
+            }
+            return list;
+        }
+        catch (XPathExpressionException e) {
+            throw Lang.wrapThrow(e);
+        }
+    }
+    
+    public static String HEAD = "<?xml version=\"1.0\" encoding=\"utf-8\"?>";
+    
+    public static class XmlParserOpts {
+        private boolean lowerFirst;
+        private boolean dupAsList;
+        private List<String> alwaysAsList;
+        private boolean keeyBlankNode;
+        private boolean attrAsKeyValue;
+        public XmlParserOpts() {
+        }
+        
+        
+        public XmlParserOpts(boolean lowerFirst, boolean dupAsList, List<String> alwaysAsList, boolean keeyBlankNode) {
+            super();
+            this.lowerFirst = lowerFirst;
+            this.dupAsList = dupAsList;
+            this.alwaysAsList = alwaysAsList;
+            this.keeyBlankNode = keeyBlankNode;
+        }
+
+
+        public boolean isLowerFirst() {
+            return lowerFirst;
+        }
+        public void setLowerFirst(boolean lowerFirst) {
+            this.lowerFirst = lowerFirst;
+        }
+        public boolean isDupAsList() {
+            return dupAsList;
+        }
+        public void setDupAsList(boolean dupAsList) {
+            this.dupAsList = dupAsList;
+        }
+        public List<String> getAlwaysAsList() {
+            return alwaysAsList;
+        }
+        public void setAlwaysAsList(List<String> alwaysAsList) {
+            this.alwaysAsList = alwaysAsList;
+        }
+        public boolean isKeeyBlankNode() {
+            return keeyBlankNode;
+        }
+        public void setKeeyBlankNode(boolean keeyBlankNode) {
+            this.keeyBlankNode = keeyBlankNode;
+        }
+
+
+        public boolean isAttrAsKeyValue() {
+            return attrAsKeyValue;
+        }
+
+
+        public void setAttrAsKeyValue(boolean attrAsKeyValue) {
+            this.attrAsKeyValue = attrAsKeyValue;
+        }
+        
     }
 }

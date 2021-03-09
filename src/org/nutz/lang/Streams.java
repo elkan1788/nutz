@@ -5,6 +5,7 @@ import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
@@ -21,7 +22,9 @@ import java.io.PushbackInputStream;
 import java.io.Reader;
 import java.io.Writer;
 
-import org.nutz.lang.stream.NullInputStream;
+import org.nutz.lang.stream.FileChannelInputStream;
+import org.nutz.lang.stream.FileChannelOutputStream;
+import org.nutz.lang.stream.VoidInputStream;
 import org.nutz.resource.NutResource;
 import org.nutz.resource.Scans;
 
@@ -39,8 +42,7 @@ public abstract class Streams {
     /**
      * 判断两个输入流是否严格相等
      */
-    public static boolean equals(InputStream sA, InputStream sB)
-            throws IOException {
+    public static boolean equals(InputStream sA, InputStream sB) throws IOException {
         int dA;
         while ((dA = sA.read()) != -1) {
             int dB = sB.read();
@@ -86,6 +88,7 @@ public abstract class Streams {
             throw Lang.wrapThrow(e);
         }
         finally {
+            safeFlush(writer);
             safeClose(writer);
         }
     }
@@ -103,8 +106,7 @@ public abstract class Streams {
      * @return 写入的字节数
      * @throws IOException
      */
-    public static long write(OutputStream ops, InputStream ins)
-            throws IOException {
+    public static long write(OutputStream ops, InputStream ins) throws IOException {
         return write(ops, ins, BUF_SIZE);
     }
 
@@ -124,7 +126,29 @@ public abstract class Streams {
      * 
      * @throws IOException
      */
-    public static long write(OutputStream ops, InputStream ins, int bufferSize)
+    public static long write(OutputStream ops, InputStream ins, int bufferSize) throws IOException {
+        return write(ops, ins, -1, bufferSize);
+    }
+
+    /**
+     * 将输入流写入一个输出流。
+     * <p>
+     * <b style=color:red>注意</b>，它并不会关闭输入/出流
+     * 
+     * @param ops
+     *            输出流
+     * @param ins
+     *            输入流
+     * @param limit
+     *            最多写入多少字节，0 或负数表示不限
+     * @param bufferSize
+     *            缓冲块大小
+     * 
+     * @return 写入的字节数
+     * 
+     * @throws IOException
+     */
+    public static long write(OutputStream ops, InputStream ins, long limit, int bufferSize)
             throws IOException {
         if (null == ops || null == ins)
             return 0;
@@ -132,9 +156,40 @@ public abstract class Streams {
         byte[] buf = new byte[bufferSize];
         int len;
         long bytesCount = 0;
-        while (-1 != (len = ins.read(buf))) {
-            bytesCount += len;
-            ops.write(buf, 0, len);
+        if (limit > 0) {
+            long remain = limit;
+            while (-1 != (len = ins.read(buf))) {
+                // 还可以写入的字节数
+                if (len > remain) {
+                    len = (int) remain;
+                    remain = 0;
+                }
+                // 减去
+                else {
+                    remain -= len;
+                }
+                bytesCount += len;
+                ops.write(buf, 0, len);
+                // 写够了
+                if (remain <= 0) {
+                    break;
+                }
+            }
+        }
+        // 全写
+        else {
+            while (-1 != (len = ins.read(buf))) {
+                bytesCount += len;
+                ops.write(buf, 0, len);
+            }
+        }
+        // 啥都没写，强制触发一下写
+        // 这是考虑到 walnut 的输出流实现，比如你写一个空文件
+        // 那么输入流就是空的，但是 walnut 的包裹输出流并不知道你写过了
+        // 它人你就是打开一个输出流，然后再关上，所以自然不会对内容做改动
+        // 所以这里触发一个写，它就知道，喔你要写个空喔。
+        if (0 == bytesCount) {
+            ops.write(buf, 0, 0);
         }
         ops.flush();
         return bytesCount;
@@ -159,6 +214,7 @@ public abstract class Streams {
             throw Lang.wrapThrow(e);
         }
         finally {
+            safeFlush(ops);
             safeClose(ops);
             safeClose(ins);
         }
@@ -175,15 +231,20 @@ public abstract class Streams {
      *            输入流
      * @throws IOException
      */
-    public static void write(Writer writer, Reader reader) throws IOException {
+    public static long write(Writer writer, Reader reader) throws IOException {
         if (null == writer || null == reader)
-            return;
+            return 0;
 
         char[] cbuf = new char[BUF_SIZE];
-        int len;
-        while (-1 != (len = reader.read(cbuf))) {
+        int len, count = 0;
+        while (true) {
+            len = reader.read(cbuf);
+            if (len == -1)
+                break;
             writer.write(cbuf, 0, len);
+            count += len;
         }
+        return count;
     }
 
     /**
@@ -196,14 +257,15 @@ public abstract class Streams {
      * @param reader
      *            输入流
      */
-    public static void writeAndClose(Writer writer, Reader reader) {
+    public static long writeAndClose(Writer writer, Reader reader) {
         try {
-            write(writer, reader);
+            return write(writer, reader);
         }
         catch (IOException e) {
             throw Lang.wrapThrow(e);
         }
         finally {
+            safeFlush(writer);
             safeClose(writer);
             safeClose(reader);
         }
@@ -244,6 +306,7 @@ public abstract class Streams {
             throw Lang.wrapThrow(e);
         }
         finally {
+            safeFlush(ops);
             safeClose(ops);
         }
     }
@@ -260,11 +323,7 @@ public abstract class Streams {
      */
     public static StringBuilder read(Reader reader) throws IOException {
         StringBuilder sb = new StringBuilder();
-        char[] cbuf = new char[BUF_SIZE];
-        int len;
-        while (-1 != (len = reader.read(cbuf))) {
-            sb.append(cbuf, 0, len);
-        }
+        read(reader, sb);
         return sb;
     }
 
@@ -291,6 +350,52 @@ public abstract class Streams {
     }
 
     /**
+     * 从一个文本流中读取全部内容并写入缓冲
+     * <p>
+     * <b style=color:red>注意</b>，它并不会关闭输出流
+     * 
+     * @param reader
+     *            文本输出流
+     * @param sb
+     *            输出的文本缓冲
+     * @return 读取的字符数量
+     * @throws IOException
+     */
+    public static int read(Reader reader, StringBuilder sb) throws IOException {
+        char[] cbuf = new char[BUF_SIZE];
+        int count = 0;
+        int len;
+        while (-1 != (len = reader.read(cbuf))) {
+            sb.append(cbuf, 0, len);
+            count += len;
+        }
+        return count;
+    }
+
+    /**
+     * 从一个文本流中读取全部内容并写入缓冲
+     * <p>
+     * <b style=color:red>注意</b>，它会关闭输出流
+     * 
+     * @param reader
+     *            文本输出流
+     * @param sb
+     *            输出的文本缓冲
+     * @return 读取的字符数量
+     */
+    public static int readAndClose(InputStreamReader reader, StringBuilder sb) {
+        try {
+            return read(reader, sb);
+        }
+        catch (IOException e) {
+            throw Lang.wrapThrow(e);
+        }
+        finally {
+            safeClose(reader);
+        }
+    }
+
+    /**
      * 读取一个输入流中所有的字节
      * 
      * @param ins
@@ -299,9 +404,9 @@ public abstract class Streams {
      * @throws IOException
      */
     public static byte[] readBytes(InputStream ins) throws IOException {
-        byte[] bytes = new byte[ins.available()];
-        ins.read(bytes);
-        return bytes;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out, ins);
+        return out.toByteArray();
     }
 
     /**
@@ -372,6 +477,61 @@ public abstract class Streams {
             return (BufferedInputStream) ins;
         // BufferedInputStream的构造方法,竟然是允许null参数的!! 我&$#^$&%
         return new BufferedInputStream(ins);
+    }
+
+    /**
+     * 创建采用 nio 方式更快速的文件输入流
+     * 
+     * @param f
+     *            文件对象
+     * @return 管道文件数据流
+     * 
+     * @throws FileNotFoundException
+     */
+    public static FileChannelInputStream chanIn(File f) throws FileNotFoundException {
+        return chan(new FileInputStream(f));
+    }
+
+    /**
+     * 包裹采用 nio 方式更快速的文件输入流
+     * 
+     * @param ins
+     *            文件输入流
+     * @return 管道文件数据流
+     */
+    public static FileChannelInputStream chan(FileInputStream ins) {
+        if (ins == null)
+            throw new NullPointerException("ins is null!");
+        return new FileChannelInputStream(ins);
+    }
+
+    /**
+     * 创建采用 nio 方式更快速的文件输出流
+     * 
+     * @param f
+     *            文件对象
+     * @param append
+     *            true 为末尾附加模式，false 表示从开头开始写
+     * 
+     * @return 管道文件数据流
+     * @throws FileNotFoundException
+     */
+    public static FileChannelOutputStream chanOps(File f, boolean append)
+            throws FileNotFoundException {
+        return chan(new FileOutputStream(f, append));
+    }
+
+    /**
+     * 包裹采用 nio 方式更快速的文件输出流
+     * 
+     * @param ins
+     *            文件输入流
+     * @return 管道文件数据流
+     */
+    public static FileChannelOutputStream chan(FileOutputStream ops) {
+        if (ops == null)
+            throw new NullPointerException("ops is null!");
+        return new FileChannelOutputStream(ops);
     }
 
     /**
@@ -485,9 +645,7 @@ public abstract class Streams {
         return utf8r(fileIn(file));
     }
 
-    private static final byte[] UTF_BOM = new byte[]{(byte) 0xEF,
-                                                     (byte) 0xBB,
-                                                     (byte) 0xBF};
+    private static final byte[] UTF_BOM = new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
 
     /**
      * 判断并移除UTF-8的BOM头
@@ -501,9 +659,7 @@ public abstract class Streams {
             int len = pis.read(header, 0, 3);
             if (len < 1)
                 return in;
-            if (header[0] != UTF_BOM[0]
-                || header[1] != UTF_BOM[1]
-                || header[2] != UTF_BOM[2]) {
+            if (header[0] != UTF_BOM[0] || header[1] != UTF_BOM[1] || header[2] != UTF_BOM[2]) {
                 pis.unread(header, 0, len);
             }
             return pis;
@@ -571,7 +727,7 @@ public abstract class Streams {
     }
 
     public static InputStream nullInputStream() {
-        return new NullInputStream();
+        return new VoidInputStream();
     }
 
     public static InputStream wrap(byte[] bytes) {
@@ -645,7 +801,7 @@ public abstract class Streams {
         }
 
     }
-    
+
     public static String nextLineTrim(BufferedReader br) throws IOException {
         String line = null;
         while (br.ready()) {
@@ -657,5 +813,19 @@ public abstract class Streams {
             return line.trim();
         }
         return line;
+    }
+
+    public static long writeAndClose(OutputStream ops, InputStream ins, int buf) {
+        try {
+            return write(ops, ins, buf);
+        }
+        catch (IOException e) {
+            throw Lang.wrapThrow(e);
+        }
+        finally {
+            safeFlush(ops);
+            safeClose(ops);
+            safeClose(ins);
+        }
     }
 }

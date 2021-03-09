@@ -24,14 +24,14 @@ class ChangeToChildConstructorMethodAdapter extends NormalMethodAdapter {
 
     void visitCode() {
         mv.visitCode();
-        // start of fuck linenumber
+        // start of fuck line number
         Label tmp = new Label();
         mv.visitLabel(tmp);
         mv.visitLineNumber(1, tmp);
-        // end of Linenumber
+        // end of line number
         mv.visitVarInsn(ALOAD, 0);
         loadArgs();
-        mv.visitMethodInsn(INVOKESPECIAL, superClassName, "<init>", desc);
+        mv.visitMethodInsn(INVOKESPECIAL, superClassName, "<init>", desc, false);
         mv.visitInsn(RETURN);
         mv.visitMaxs(2, 2);
         mv.visitEnd();

@@ -1,55 +1,43 @@
 package org.nutz.ioc.impl;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileFilter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.Reader;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-
 import org.nutz.castor.Castors;
-import org.nutz.lang.Files;
-import org.nutz.lang.Lang;
-import org.nutz.lang.Streams;
-import org.nutz.lang.Strings;
+import org.nutz.lang.*;
+import org.nutz.lang.inject.Injecting;
 import org.nutz.lang.util.Disks;
 import org.nutz.lang.util.FileVisitor;
 import org.nutz.lang.util.MultiLineProperties;
 import org.nutz.log.Log;
 import org.nutz.log.Logs;
+import org.nutz.mapl.Mapl;
 import org.nutz.resource.NutResource;
 import org.nutz.resource.Scans;
 
+import java.io.*;
+import java.util.*;
+
 /**
  * 代理Properties文件,以便直接在Ioc配置文件中使用
- * 
+ *
  * @author wendal(wendal1985@gmail.com)
  * @author zozoh(zozohtnt@gmail.com)
- * 
+ *
  * @since 1.b.37
  */
-public class PropertiesProxy {
+public class PropertiesProxy extends MultiLineProperties {
 
     private static final Log log = Logs.get();
-
+    private static final String VM_NUTZ_CONF_PATH = "nutz.conf.path.";
     // 是否为UTF8格式的Properties文件
     private final boolean utf8;
     // 是否忽略无法加载的文件
     private boolean ignoreResourceNotFound = false;
 
-    private MultiLineProperties mp = new MultiLineProperties();
-
     public PropertiesProxy() {
         this(true);
     }
-    
+
+    private Integer keyIndex;
+
     public PropertiesProxy(boolean utf8, String... paths) {
         this(utf8);
         this.setPaths(paths);
@@ -67,11 +55,13 @@ public class PropertiesProxy {
     public PropertiesProxy(InputStream in) {
         this(true);
         try {
-            mp = new MultiLineProperties();
-            mp.load(new InputStreamReader(in));
+            load(new InputStreamReader(in));
         }
         catch (IOException e) {
             throw Lang.wrapThrow(e);
+        }
+        finally {
+            Streams.safeClose(in);
         }
     }
 
@@ -83,32 +73,40 @@ public class PropertiesProxy {
     public PropertiesProxy(Reader r) {
         this(true);
         try {
-            mp = new MultiLineProperties();
-            mp.load(r);
+            load(r);
         }
         catch (IOException e) {
             throw Lang.wrapThrow(e);
         }
+        finally {
+            Streams.safeClose(r);
+        }
+    }
+
+    public void setKeyIndex(Integer keyIndex) {
+        this.keyIndex = keyIndex;
     }
 
     /**
      * 加载指定文件/文件夹的Properties文件,合并成一个Properties对象
      * <p>
      * <b style=color:red>如果有重复的key,请务必注意加载的顺序!!<b/>
-     * 
+     *
+     *
      * @param paths
      *            需要加载的Properties文件路径
      */
     public void setPaths(String... paths) {
-        mp = new MultiLineProperties();
-
+        clear();
         try {
             List<NutResource> list = getResources(paths);
             if (utf8)
                 for (NutResource nr : list) {
+                    if (log.isDebugEnabled())
+                        log.debug("load properties from " + nr);
                     Reader r = nr.getReader();
                     try {
-                        mp.load(nr.getReader(), false);
+                        load(nr.getReader(), false);
                     }
                     finally {
                         Streams.safeClose(r);
@@ -126,7 +124,7 @@ public class PropertiesProxy {
                         Streams.safeClose(bf);
                     }
                 }
-                mp.putAll(p);
+                putAll(p);
             }
         }
         catch (IOException e) {
@@ -134,15 +132,42 @@ public class PropertiesProxy {
         }
     }
 
+    public List<String> getKeysWithPrefix(String prefix) {
+        List<String> list = new ArrayList<String>();
+        for (String key : getKeys()) {
+            if (key != null && key.startsWith(prefix)) {
+                list.add(key);
+            }
+        }
+        return list;
+    }
+
     /**
      * 加载指定文件/文件夹的Properties文件
-     * 
+     *
      * @param paths
      *            需要加载的Properties文件路径
      * @return 加载到的Properties文件Resource列表
      */
     private List<NutResource> getResources(String... paths) {
         List<NutResource> list = new ArrayList<NutResource>();
+        if (null != keyIndex) {
+            try {
+                String vmJsonStr = "";
+                Properties p = System.getProperties();
+                for (Object key : p.keySet()) {
+                    if (((String) key).startsWith(VM_NUTZ_CONF_PATH + keyIndex))
+                        vmJsonStr = p.getProperty((String) key).trim();
+                }
+                if (Strings.isNotBlank(vmJsonStr)) {
+                    paths = vmJsonStr.split("\\,");
+                }
+            } catch (Exception e) {
+                if (log.isDebugEnabled()) {
+                    log.debug("-D" + VM_NUTZ_CONF_PATH + keyIndex + " value is invalid:  " + e.getMessage());
+                }
+            }
+        }
         for (String path : paths) {
             try {
                 List<NutResource> resources = Scans.me().loadResource("^.+[.]properties$", path);
@@ -172,11 +197,7 @@ public class PropertiesProxy {
      * @since 1.b.50
      */
     public boolean has(String key) {
-        return mp.containsKey(key);
-    }
-
-    public void put(String key, String value) {
-        mp.put(key, value);
+        return containsKey(key);
     }
 
     public PropertiesProxy set(String key, String val) {
@@ -202,19 +223,19 @@ public class PropertiesProxy {
         return Castors.me().castTo(val, Boolean.class);
     }
 
-    public String get(String key) {
-        return mp.get(key);
-    }
-
     public String get(String key, String defaultValue) {
-        return Strings.sNull(mp.get(key), defaultValue);
+        return Strings.sNull(get(key), defaultValue);
     }
 
     public List<String> getList(String key) {
+        return getList(key,"\n");
+    }
+
+    public List<String> getList(String key,String separatorChar) {
         List<String> re = new ArrayList<String>();
         String keyVal = get(key);
         if (Strings.isNotBlank(keyVal)) {
-            String[] vlist = Strings.splitIgnoreBlank(keyVal, "\n");
+            String[] vlist = Strings.splitIgnoreBlank(keyVal, separatorChar);
             for (String v : vlist) {
                 re.add(v);
             }
@@ -265,18 +286,16 @@ public class PropertiesProxy {
     }
 
     public List<String> getKeys() {
-        return mp.keys();
+        return keys();
     }
 
     public Collection<String> getValues() {
-        return mp.values();
+        return values();
     }
 
     public Properties toProperties() {
         Properties p = new Properties();
-        for (String key : mp.keySet()) {
-            p.put(key, mp.get(key));
-        }
+        p.putAll(this);
         return p;
     }
 
@@ -284,7 +303,7 @@ public class PropertiesProxy {
      * 根据自身的一个键对应的值扩展自身的属性。
      * <p>
      * 本函数假设你可能有下面的键值:
-     * 
+     *
      * <pre>
      * ...
      * files:
@@ -292,12 +311,12 @@ public class PropertiesProxy {
      * path/to_b.properties
      * #End files
      * </pre>
-     * 
+     *
      * 那么如果你调用 <code>joinByKey("files");</code> <br>
      * 则会将其值的两个属性文件展开，加入到自身。
      * <p>
      * 属性文件的路径可以是磁盘全路径，或者在 CLASSPATH 里的路径
-     * 
+     *
      * @param key
      *            键
      * @return 自身
@@ -337,7 +356,7 @@ public class PropertiesProxy {
 
     /**
      * 将另外一个 Properties 文本加入本散列表
-     * 
+     *
      * @param r
      *            文本输入流
      * @return 自身
@@ -353,11 +372,42 @@ public class PropertiesProxy {
         finally {
             Streams.safeClose(r);
         }
-        this.mp.putAll(mp);
+        this.putAll(mp);
         return this;
     }
 
     public Map<String, String> toMap() {
-        return new HashMap<String, String>(mp);
+        return new LinkedHashMap<String, String>(this);
     }
+
+    public String get(String key) {
+        return super.get(key);
+    }
+
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	public <T> T makeDeep(Class<T> klass, String prefix) {
+		Map map = this;
+		return (T) Mapl.maplistToObj(Lang.filter(map, prefix, null, null, null), klass);
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public <T> T make(Class<T> klass, String prefix) {
+		Map map = this;
+		Mirror<T> mirror = Mirror.me(klass);
+		T t = mirror.born();
+		map = Lang.filter(map, prefix, null, null, null);
+		for (Entry<String, Object> en : ((Map<String, Object>) map).entrySet()) {
+			String name = en.getKey();
+			Injecting setter = null;
+            try {
+                setter = mirror.getInjecting(name);
+            }
+            catch (Exception e) {
+                log.debugf("no such field(name=%s) at object class=%s, skip", name, t.getClass().getName());
+                continue;
+            }
+			setter.inject(t, en.getValue());
+		}
+		return t;
+	}
 }

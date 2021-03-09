@@ -1,5 +1,6 @@
 package org.nutz.mvc.impl;
 
+import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.URL;
@@ -18,13 +19,17 @@ import org.nutz.lang.Lang;
 import org.nutz.lang.Mirror;
 import org.nutz.lang.Strings;
 import org.nutz.lang.segment.Segments;
+import org.nutz.lang.util.ClassMeta;
+import org.nutz.lang.util.ClassMetaReader;
 import org.nutz.lang.util.Context;
 import org.nutz.log.Log;
 import org.nutz.log.Logs;
 import org.nutz.mvc.ActionFilter;
 import org.nutz.mvc.ActionInfo;
+import org.nutz.mvc.EntryDeterminer;
 import org.nutz.mvc.HttpAdaptor;
 import org.nutz.mvc.ModuleScanner;
+import org.nutz.mvc.Mvcs;
 import org.nutz.mvc.NutConfig;
 import org.nutz.mvc.ObjectInfo;
 import org.nutz.mvc.annotation.AdaptBy;
@@ -37,7 +42,9 @@ import org.nutz.mvc.annotation.Fail;
 import org.nutz.mvc.annotation.Filters;
 import org.nutz.mvc.annotation.GET;
 import org.nutz.mvc.annotation.Modules;
+import org.nutz.mvc.annotation.OPTIONS;
 import org.nutz.mvc.annotation.Ok;
+import org.nutz.mvc.annotation.PATCH;
 import org.nutz.mvc.annotation.POST;
 import org.nutz.mvc.annotation.PUT;
 import org.nutz.mvc.annotation.PathMap;
@@ -49,35 +56,46 @@ public abstract class Loadings {
 
     public static ActionInfo createInfo(Class<?> type) {
         ActionInfo ai = new ActionInfo();
-        evalEncoding(ai, type.getAnnotation(Encoding.class));
-        evalHttpAdaptor(ai, type.getAnnotation(AdaptBy.class));
-        evalActionFilters(ai, type.getAnnotation(Filters.class));
-        evalPathMap(ai, type.getAnnotation(PathMap.class));
-        evalOk(ai, type.getAnnotation(Ok.class));
-        evalFail(ai, type.getAnnotation(Fail.class));
-        evalAt(ai, type.getAnnotation(At.class), type.getSimpleName());
-        evalActionChainMaker(ai, type.getAnnotation(Chain.class));
+        evalEncoding(ai, Mirror.getAnnotationDeep(type, Encoding.class));
+        evalHttpAdaptor(ai, Mirror.getAnnotationDeep(type, AdaptBy.class));
+        evalActionFilters(ai, Mirror.getAnnotationDeep(type, Filters.class));
+        evalPathMap(ai, Mirror.getAnnotationDeep(type, PathMap.class));
+        evalOk(ai, Mirror.getAnnotationDeep(type, Ok.class));
+        evalFail(ai, Mirror.getAnnotationDeep(type, Fail.class));
+        evalAt(ai, Mirror.getAnnotationDeep(type, At.class), type.getSimpleName(), false);
+        evalActionChainMaker(ai, Mirror.getAnnotationDeep(type, Chain.class));
         evalModule(ai, type);
+        if (Mvcs.DISPLAY_METHOD_LINENUMBER) {
+            InputStream ins = type.getClassLoader().getResourceAsStream(type.getName().replace(".", "/") + ".class");
+            if (ins != null) {
+                try {
+                    ClassMeta meta = ClassMetaReader.build(ins);
+                    ai.setMeta(meta);
+                }
+                catch (Exception e) {
+                }
+            }
+        }
         return ai;
     }
 
     public static ActionInfo createInfo(Method method) {
         ActionInfo ai = new ActionInfo();
-        evalEncoding(ai, method.getAnnotation(Encoding.class));
-        evalHttpAdaptor(ai, method.getAnnotation(AdaptBy.class));
-        evalActionFilters(ai, method.getAnnotation(Filters.class));
-        evalOk(ai, method.getAnnotation(Ok.class));
-        evalFail(ai, method.getAnnotation(Fail.class));
-        evalAt(ai, method.getAnnotation(At.class), method.getName());
-        evalActionChainMaker(ai, method.getAnnotation(Chain.class));
-        evalHttpMethod(ai, method, method.getAnnotation(At.class));
+        evalEncoding(ai, Mirror.getAnnotationDeep(method, Encoding.class));
+        evalHttpAdaptor(ai, Mirror.getAnnotationDeep(method, AdaptBy.class));
+        evalActionFilters(ai, Mirror.getAnnotationDeep(method, Filters.class));
+        evalOk(ai, Mirror.getAnnotationDeep(method, Ok.class));
+        evalFail(ai, Mirror.getAnnotationDeep(method, Fail.class));
+        evalHttpMethod(ai, method, Mirror.getAnnotationDeep(method, At.class));
+        evalAt(ai, Mirror.getAnnotationDeep(method, At.class), method.getName(), true);
+        evalActionChainMaker(ai, Mirror.getAnnotationDeep(method, Chain.class));
         ai.setMethod(method);
         return ai;
     }
 
-    public static Set<Class<?>> scanModules(Ioc ioc, Class<?> mainModule) {
+    public static Set<Class<?>> scanModules(Ioc ioc, Class<?> mainModule, EntryDeterminer determiner) {
         Modules ann = mainModule.getAnnotation(Modules.class);
-        boolean scan = null == ann ? false : ann.scanPackage();
+        boolean scan = null == ann ? true : ann.scanPackage();
         // 准备扫描列表
         Set<Class<?>> forScans = new HashSet<Class<?>>();
 
@@ -117,7 +135,7 @@ public abstract class Loadings {
                 Collection<Class<?>> col = ms.scan();
                 if (null != col)
                     for (Class<?> type : col) {
-                        if (isModule(type)) {
+                        if (isModule(type, determiner)) {
                             modules.add(type);
                         }
                     }
@@ -126,7 +144,7 @@ public abstract class Loadings {
             // 扫描包，扫描出的类直接计入结果
             if (ann.packages() != null && ann.packages().length > 0) {
                 for (String packageName : ann.packages()) {
-                    scanModuleInPackage(modules, packageName);
+                    scanModuleInPackage(modules, packageName, determiner);
                 }
             }
         }
@@ -141,20 +159,20 @@ public abstract class Loadings {
             catch (NullPointerException e) {
                 // Android上无法拿到getProtectionDomain,just pass
             }
-            Scans.me().registerLocation(type);
+            //Scans.me().registerLocation(type);
         }
 
         // 执行扫描
         for (Class<?> type : forScans) {
             // 扫描子包
             if (scan) {
-                scanModuleInPackage(modules, type.getPackage().getName());
+                scanModuleInPackage(modules, type.getPackage().getName(), determiner);
             }
             // 仅仅加载自己
             else {
-                if (isModule(type)) {
+                if (isModule(type, determiner)) {
                     if (log.isDebugEnabled())
-                        log.debugf(" > add '%s'", type.getName());
+                        log.debugf(" > Found @At : '%s'", type.getName());
                     modules.add(type);
                 } else if (log.isTraceEnabled()) {
                     log.tracef(" > ignore '%s'", type.getName());
@@ -164,41 +182,55 @@ public abstract class Loadings {
         return modules;
     }
 
-    protected static void scanModuleInPackage(Set<Class<?>> modules, String packageName) {
+    public static void scanModuleInPackage(Set<Class<?>> modules, String packageName, EntryDeterminer determiner) {
         if (log.isDebugEnabled())
             log.debugf(" > scan '%s'", packageName);
 
         List<Class<?>> subs = Scans.me().scanPackage(packageName);
-        checkModule(modules, subs);
+        checkModule(modules, subs, determiner);
+    }
+    
+    public static void scanModuleInPackage(Set<Class<?>> modules, String packageName) {
+        scanModuleInPackage(modules, packageName, new NutEntryDeterminer());
     }
 
     /**
      * @param modules
      * @param subs
      */
-    private static void checkModule(Set<Class<?>> modules, List<Class<?>> subs) {
+    private static void checkModule(Set<Class<?>> modules, List<Class<?>> subs, EntryDeterminer determiner) {
         for (Class<?> sub : subs) {
-            if (isModule(sub)) {
-                if (log.isDebugEnabled())
-                    log.debugf("   >> add '%s'", sub.getName());
-                modules.add(sub);
-            } else if (log.isTraceEnabled()) {
-                log.tracef("   >> ignore '%s'", sub.getName());
+            try {
+                if (isModule(sub, determiner)) {
+                    if (log.isDebugEnabled())
+                        log.debugf("   >> add '%s'", sub.getName());
+                    modules.add(sub);
+                } else if (log.isTraceEnabled()) {
+                    log.tracef("   >> ignore '%s'", sub.getName());
+                }
+            }
+            catch (Exception e) {
+                throw new RuntimeException("something happen when handle class=" + sub.getName(), e);
             }
         }
     }
 
     public static void evalHttpMethod(ActionInfo ai, Method method, At at) {
-        if (method.getAnnotation(GET.class) != null)
+        if (Mirror.getAnnotationDeep(method, GET.class) != null)
             ai.getHttpMethods().add("GET");
-        if (method.getAnnotation(POST.class) != null)
+        if (Mirror.getAnnotationDeep(method, POST.class) != null)
             ai.getHttpMethods().add("POST");
-        if (method.getAnnotation(PUT.class) != null)
+        if (Mirror.getAnnotationDeep(method, PUT.class) != null)
             ai.getHttpMethods().add("PUT");
-        if (method.getAnnotation(DELETE.class) != null)
+        if (Mirror.getAnnotationDeep(method, DELETE.class) != null)
             ai.getHttpMethods().add("DELETE");
-        for (String m : at.methods()) {
-            ai.getHttpMethods().add(m.toUpperCase());
+        if (Mirror.getAnnotationDeep(method, OPTIONS.class) != null)
+            ai.getHttpMethods().add("OPTIONS");
+        if (Mirror.getAnnotationDeep(method, PATCH.class) != null)
+            ai.getHttpMethods().add("PATCH");
+        if (at != null) {
+            for (String m : at.methods())
+                ai.getHttpMethods().add(m.toUpperCase());
         }
     }
 
@@ -208,7 +240,7 @@ public abstract class Loadings {
         }
     }
 
-    public static void evalAt(ActionInfo ai, At at, String def) {
+    public static void evalAt(ActionInfo ai, At at, String def, boolean isMethod) {
         if (null != at) {
             if (null == at.value() || at.value().length == 0) {
                 ai.setPaths(Lang.array("/" + def.toLowerCase()));
@@ -220,6 +252,9 @@ public abstract class Loadings {
                 ai.setPathKey(at.key());
             if (at.top())
                 ai.setPathTop(true);
+        } else if (isMethod) {
+            // 由于EntryDeterminer机制的存在，action方法上可能没有@At，这时候给一个默认的入口路径
+            ai.setPaths(Lang.array("/" + def.toLowerCase()));
         }
     }
 
@@ -246,8 +281,8 @@ public abstract class Loadings {
         ai.setModuleType(type);
         String beanName = null;
         // 按照5.10.3章节的说明，优先使用IocBean.name的注解声明bean的名字 Modify By QinerG@gmai.com
-        InjectName innm = type.getAnnotation(InjectName.class);
-        IocBean iocBean = type.getAnnotation(IocBean.class);
+        InjectName innm = Mirror.getAnnotationDeep(type,InjectName.class);
+        IocBean iocBean = Mirror.getAnnotationDeep(type,IocBean.class);
         if (innm == null && iocBean == null) // TODO 再考虑考虑
             return;
         if (iocBean != null) {
@@ -307,16 +342,19 @@ public abstract class Loadings {
         return Mirror.me(type).born((Object[]) args);
     }
 
-    public static boolean isModule(Class<?> classZ) {
+    public static boolean isModule(Class<?> classZ, EntryDeterminer determiner) {
         int classModify = classZ.getModifiers();
         if (!Modifier.isPublic(classModify)
             || Modifier.isAbstract(classModify)
             || Modifier.isInterface(classModify))
             return false;
         for (Method method : classZ.getMethods())
-            if (method.isAnnotationPresent(At.class))
+            if (determiner.isEntry(classZ, method))
                 return true;
         return false;
     }
-
+    
+    public static boolean isModule(Class<?> classZ) {
+        return isModule(classZ, new NutEntryDeterminer());
+    }
 }

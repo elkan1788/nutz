@@ -11,15 +11,18 @@ import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.Assert;
 import org.junit.Test;
 import org.nutz.NutzEnum;
 import org.nutz.dao.DB;
 import org.nutz.dao.entity.annotation.Id;
 import org.nutz.dao.entity.annotation.Name;
 import org.nutz.dao.test.meta.Pet;
+import org.nutz.ioc.loader.annotation.IocBean;
 import org.nutz.lang.born.Borning;
 import org.nutz.lang.meta.Email;
 import org.nutz.lang.meta.Issue392Bean;
+import org.nutz.lang.meta.IssueVarStringMethodC;
 import org.nutz.lang.reflect.ObjA;
 import org.nutz.lang.util.Callback;
 import org.nutz.lang.util.Callback3;
@@ -159,7 +162,7 @@ public class MirrorTest {
     }
 
     @Test
-    public void testGetWrpperClass() {
+    public void testGetWrapperClass() {
         assertEquals(Boolean.class, Mirror.me(Boolean.class).getWrapperClass());
         assertEquals(Boolean.class, Mirror.me(boolean.class).getWrapperClass());
         assertEquals(Integer.class, Mirror.me(Integer.class).getWrapperClass());
@@ -267,14 +270,14 @@ public class MirrorTest {
     }
 
     @Test
-    public void testBornByStaticDynamiceArgs() {
+    public void testBornByStaticDynamicArgs() {
         DS ds = Mirror.me(DS.class).born(23, new String[]{"TT", "FF"});
         assertEquals(23, ds.id);
         assertEquals("FF", ds.values[1]);
     }
 
     @Test
-    public void testBornByStaticNullDynamiceArgs() {
+    public void testBornByStaticNullDynamicArgs() {
         DS ds = Mirror.me(DS.class).born(23);
         assertEquals(23, ds.id);
         assertEquals(0, ds.values.length);
@@ -291,21 +294,21 @@ public class MirrorTest {
     }
 
     @Test
-    public void testBornByInnerDynamiceArgs() {
+    public void testBornByInnerDynamicArgs() {
         DD ds = Mirror.me(DD.class).born(23, new String[]{"TT", "FF"});
         assertEquals(23, ds.id);
         assertEquals("FF", ds.values[1]);
     }
 
     @Test
-    public void testBornByInnerNullDynamiceArgs() {
+    public void testBornByInnerNullDynamicArgs() {
         DD ds = Mirror.me(DD.class).born(23);
         assertEquals(23, ds.id);
         assertEquals(0, ds.values.length);
     }
 
     @Test
-    public void testBornByInnerOuterDynamiceArgs() {
+    public void testBornByInnerOuterDynamicArgs() {
         DD ds = Mirror.me(DD.class).born(23);
         assertEquals(23, ds.id);
         assertEquals(0, ds.values.length);
@@ -538,7 +541,7 @@ public class MirrorTest {
     }
 
     @Test
-    public void test_borning_of_constractor() {
+    public void test_borning_of_constructor() {
         Borning<TBOC> b = Mirror.me(TBOC.class).getBorning("H2");
         TBOC tb = b.born("H2");
         assertEquals(DB.H2, tb.db);
@@ -633,4 +636,31 @@ public class MirrorTest {
         assertEquals(0, Mirror.me(Issue392Bean.class).born(new byte[]{}).getLen());
         assertEquals(6, Mirror.me(Issue392Bean.class).born(new byte[]{1, 2, 3, 4, 5, 6}).getLen());
     }
+    
+    @Test
+    public void test_var_string_factory() throws NoSuchMethodException {
+        Mirror.me(IssueVarStringMethodC.class).born("wendal", "abc");
+        ArrayList<String> args = new ArrayList<String>();
+        args.add("wendal");
+        args.add("abc");
+        Mirror.me(IssueVarStringMethodC.class).born(args.toArray());
+        Mirror.me(IssueVarStringMethodC.class).findMethod("make", args.toArray(new String[0]));
+    }
+
+    @Test
+    public void test_annotation_NPE() throws Exception {
+
+
+        IocBean annotation = Mirror.me(test.class).getAnnotation(IocBean.class);
+
+        Assert.assertNull(annotation);
+
+    }
+
+
+    public @interface test {
+
+    }
+
+
 }

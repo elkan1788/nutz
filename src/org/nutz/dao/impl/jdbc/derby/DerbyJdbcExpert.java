@@ -30,7 +30,7 @@ public class DerbyJdbcExpert extends MysqlJdbcExpert {
     
     @Override
     public ValueAdaptor getAdaptor(MappingField ef) {
-        if (ef.getTypeMirror().isBoolean())
+        if (ef.getMirror().isBoolean())
             return new DerbyBooleanAdaptor();
         return super.getAdaptor(ef);
     }
@@ -80,7 +80,7 @@ public class DerbyJdbcExpert extends MysqlJdbcExpert {
         for (MappingField mf : en.getMappingFields()) {
             if (mf.isReadonly())
                 continue;
-            sb.append('\n').append(mf.getColumnName());
+            sb.append('\n').append(mf.getColumnNameInSql());
             sb.append(' ').append(evalFieldType(mf));
             // 非主键的 @Name，应该加入唯一性约束
             if (mf.isName() && en.getPkType() != PkType.NAME) {
@@ -111,7 +111,7 @@ public class DerbyJdbcExpert extends MysqlJdbcExpert {
                     }
                 } else {
                     if (mf.hasDefaultValue())
-                        sb.append(" DEFAULT '").append(getDefaultValue(mf)).append("'");
+                        addDefaultValue(sb, mf);
                 }
             }
 
@@ -127,7 +127,7 @@ public class DerbyJdbcExpert extends MysqlJdbcExpert {
             sb.append('\n');
             sb.append("PRIMARY KEY (");
             for (MappingField pk : pks) {
-                sb.append(pk.getColumnName()).append(',');
+                sb.append(pk.getColumnNameInSql()).append(',');
             }
             sb.setCharAt(sb.length() - 1, ')');
             sb.append("\n ");

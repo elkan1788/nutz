@@ -9,10 +9,12 @@ import org.nutz.plugin.Plugin;
 
 public class SystemLogAdapter implements LogAdapter, Plugin {
 
+    @Override
     public Log getLogger(String className) {
         return SystemLog.me();
     }
 
+    @Override
     public boolean canWork() {
         return true;
     }
@@ -31,7 +33,7 @@ public class SystemLogAdapter implements LogAdapter, Plugin {
 
         static SystemLog me() {
             if (! warned) {
-                me.warn("!!You are using default SystemLog! Don't use it in Production environment!!");
+                me.info("Select SystemLog as Nutz.Log implement");
                 warned = true;
             }
             return me;
@@ -39,72 +41,87 @@ public class SystemLogAdapter implements LogAdapter, Plugin {
 
         private SystemLog() {
             isInfoEnabled = true;
-            isDebugEnabled = true;//严重考虑中!!
+            isDebugEnabled = true;
         }
 
+        @Override
         public void debug(Object message, Throwable t) {
-            if (isDebugEnabled())
+            if (isDebugEnabled()) {
                 printOut("DEBUG",message, t);
+            }
         }
 
+        @Override
         public void error(Object message, Throwable t) {
-            if (isErrorEnabled())
+            if (isErrorEnabled()) {
                 errorOut("ERROR",message, t);
+            }
         }
 
+        @Override
         public void fatal(Object message, Throwable t) {
-            if (isFatalEnabled())
+            if (isFatalEnabled()) {
                 errorOut("FATAL",message, t);
+            }
         }
 
+        @Override
         public void info(Object message, Throwable t) {
-            if (isInfoEnabled())
+            if (isInfoEnabled()) {
                 printOut("INFO",message, t);
+            }
         }
 
+        @Override
         public void trace(Object message, Throwable t) {
-            if (isTraceEnabled())
+            if (isTraceEnabled()) {
                 printOut("TRACE",message, t);
+            }
         }
 
+        @Override
         public void warn(Object message, Throwable t) {
-            if (isWarnEnabled())
+            if (isWarnEnabled()) {
                 errorOut("WARN",message, t);
+            }
         }
 
         private void printOut(String level, Object message, Throwable t) {
-            System.out.printf("%s %s [%s] %s\n", Times.sDTms(new Date()), level, Thread.currentThread().getName(),message);
-            if (t != null)
+            System.out.printf("%s %s [%s] %s\n", Times.sDTms2(new Date()), level, Thread.currentThread().getName(),message);
+            if (t != null) {
                 t.printStackTrace(System.out);
+            }
         }
 
         private void errorOut(String level, Object message, Throwable t) {
-            System.err.printf("%s %s [%s] %s\n", Times.sDTms(new Date()), level, Thread.currentThread().getName(),message);
-            if (t != null)
+            System.err.printf("%s %s [%s] %s\n", Times.sDTms2(new Date()), level, Thread.currentThread().getName(),message);
+            if (t != null) {
                 t.printStackTrace(System.err);
+            }
         }
 
         @Override
         protected void log(int level, Object message, Throwable tx) {
             switch (level) {
-            case LEVEL_FATAL:
-                fatal(message, tx);
-                break;
-            case LEVEL_ERROR:
-                error(message, tx);
-                break;
-            case LEVEL_WARN:
-                warn(message, tx);
-                break;
-            case LEVEL_INFO:
-                info(message, tx);
-                break;
-            case LEVEL_DEBUG:
-                debug(message, tx);
-                break;
-            case LEVEL_TRACE:
-                trace(message, tx);
-                break;
+                case LEVEL_FATAL:
+                    fatal(message, tx);
+                    break;
+                case LEVEL_ERROR:
+                    error(message, tx);
+                    break;
+                case LEVEL_WARN:
+                    warn(message, tx);
+                    break;
+                case LEVEL_INFO:
+                    info(message, tx);
+                    break;
+                case LEVEL_DEBUG:
+                    debug(message, tx);
+                    break;
+                case LEVEL_TRACE:
+                    trace(message, tx);
+                    break;
+                default:
             }
         }
 

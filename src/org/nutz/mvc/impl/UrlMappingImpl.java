@@ -22,13 +22,20 @@ public class UrlMappingImpl implements UrlMapping {
 
     private static final Log log = Logs.get();
 
-    private Map<String, ActionInvoker> map;// 这个对象有点多余,考虑换成AtMap吧!!
+    protected Map<String, ActionInvoker> map;// 这个对象有点多余,考虑换成AtMap吧!!
 
-    private MappingNode<ActionInvoker> root;
+    protected MappingNode<ActionInvoker> root;
+    
+    protected String prefix;
 
     public UrlMappingImpl() {
         this.map = new HashMap<String, ActionInvoker>();
         this.root = new MappingNode<ActionInvoker>();
+    }
+    
+    public UrlMappingImpl(String prefix) {
+        this();
+        this.prefix = prefix;
     }
 
     public void add(ActionChainMaker maker, ActionInfo ai, NutConfig config) {
@@ -57,19 +64,21 @@ public class UrlMappingImpl implements UrlMapping {
                 root.add(path, invoker);
                 // 记录一下方法与 url 的映射
                 config.getAtMap().addMethod(path, ai.getMethod());
-            } else if (!ai.isForSpecialHttpMethod()) {
-                log.warnf("Duplicate @At mapping ? path=" + path);
             }
+            //else if (!ai.isForSpecialHttpMethod()) {
+            //    log.warnf("Duplicate @At mapping ? path=" + path);
+            //}
 
             // 将动作链，根据特殊的 HTTP 方法，保存到调用者内部
-            if (ai.isForSpecialHttpMethod()) {
-                for (String httpMethod : ai.getHttpMethods())
-                    invoker.addChain(httpMethod, chain);
-            }
+            //if (ai.isForSpecialHttpMethod()) {
+            //    for (String httpMethod : ai.getHttpMethods())
+            //        invoker.addChain(httpMethod, chain);
+            //}
             // 否则，将其设置为默认动作链
-            else {
-                invoker.setDefaultChain(chain);
-            }
+            //else {
+            //    invoker.setDefaultChain(chain);
+            //}
+            invoker.add(path, ai, chain);
         }
 
         printActionMapping(ai);
@@ -83,6 +92,8 @@ public class UrlMappingImpl implements UrlMapping {
     public ActionInvoker get(ActionContext ac) {
         RequestPath rp = Mvcs.getRequestPathObject(ac.getRequest());
         String path = rp.getPath();
+        if (prefix != null)
+            path = path.substring(prefix.length());
         ac.setSuffix(rp.getSuffix());
         ActionInvoker invoker = root.get(ac, path);
         if (invoker != null) {
@@ -98,11 +109,20 @@ public class UrlMappingImpl implements UrlMapping {
             }
         }
         if (log.isDebugEnabled())
-            log.debugf("Search mapping for path=%s : NOT Action match", path);
+            log.debugf("Search mapping for [%s] path=%s : NOT Action match", ac.getRequest().getMethod(), path);
         return null;
     }
-
+    
+    public void add(String path, ActionInvoker invoker) {
+    	root.add(path, invoker);
+    	map.put(path, invoker);
+    }
+    
     protected void printActionMapping(ActionInfo ai) {
+        print(ai);
+    }
+
+    protected void print(ActionInfo ai) {
 
         /*
          * 打印基本调试信息
@@ -122,12 +142,10 @@ public class UrlMappingImpl implements UrlMapping {
             Method method = ai.getMethod();
             String str;
             if (null != method)
-                str = String.format("%-30s : %-10s",
-                                    Lang.simpleMetodDesc(method),
-                                    method.getReturnType().getSimpleName());
+                str = genMethodDesc(ai);
             else
                 throw Lang.impossible();
-            log.debugf("%s >> %s | @Ok(%-5s) @Fail(%-5s) | by %d Filters | (I:%s/O:%s)",
+            log.debugf("%s >> %50s | @Ok(%-5s) @Fail(%-5s) | by %d Filters | (I:%s/O:%s)",
                        Strings.alignLeft(sb, 30, ' '),
                        str,
                        ai.getOkView(),
@@ -137,5 +155,23 @@ public class UrlMappingImpl implements UrlMapping {
                        ai.getInputEncoding(),
                        ai.getOutputEncoding());
         }
+    }
+    
+    protected String genMethodDesc(ActionInfo ai) {
+        Method method = ai.getMethod();
+        String prefix = "";
+        if (ai.getLineNumber() != null && ai.getLineNumber() > 0) {
+            prefix = String.format("(%s.java:%d).%s",
+                                 method.getDeclaringClass().getSimpleName(),
+                                 ai.getLineNumber(),
+                                 method.getName());
+        } else {
+            prefix = String.format("%s.%s(...)",
+                                   method.getDeclaringClass().getSimpleName(),
+                                   method.getName());
+        }
+        return String.format("%-37s : %-10s", 
+                             prefix,
+                             method.getReturnType().getSimpleName());
     }
 }

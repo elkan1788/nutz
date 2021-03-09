@@ -8,7 +8,9 @@ import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 
 import org.junit.Before;
@@ -24,6 +26,7 @@ import org.nutz.lang.Maths;
 import org.nutz.lang.Mirror;
 import org.nutz.lang.Strings;
 import org.nutz.lang.util.Context;
+import org.nutz.lang.util.NutMap;
 import org.nutz.repo.Base64;
 
 public class El2Test {
@@ -534,5 +537,87 @@ public class El2Test {
         
         re = El.eval("urlencode('中文', 'gb2312')").toString();
         assertEquals(URLEncoder.encode("中文", Encoding.GB2312), re);
+    }
+    
+    @Test
+    public void test_map_get() {
+        Map<String, Object> map = new HashMap<String, Object>();
+        map.put("wendal", "http://wendal.net");
+        List<String> list = new ArrayList<String>();
+        list.add("abc");
+        assertEquals("http://wendal.net", El.eval(Lang.context().set("ctx", map), "ctx['wendal']"));
+        assertEquals("abc", El.eval(Lang.context().set("list", list), "list[0]"));
+    }
+    
+
+    @Test
+    public void test_el() {
+        El el = new El("'hi,'+name");
+        Context ctx = Lang.context();
+        ctx.set("name", "wendal");
+        assertEquals("hi,wendal", el.eval(ctx));
+    }
+    
+    @Test
+    public void test_el2() throws Exception {
+        El el = new El("sayhi(name)");
+        Context ctx = Lang.context();
+        ctx.set("name", "wendal");
+        ctx.set("sayhi", getClass().getMethod("sayhi", String.class));
+        assertEquals("hi,wendal", el.eval(ctx));
+    }
+    
+    public static String sayhi(String name) {
+        return "hi,"+name;
+    }
+    
+    @Test(timeout=5000, expected=Exception.class)
+    public void test_el_issue1185() {
+        Context context = Lang.context();
+        El.eval(context, "a.b)*0.30");
+    }
+    
+    @Test
+    public void test_issue_1307() {
+        //assertTrue((Boolean)El.eval("0 == 0"));
+        assertTrue((Boolean)El.eval("0 == 0.0"));
+    }
+    
+    @Test
+    public void test_issue_1229() {
+        Context ctx = Lang.context();
+        ctx.set("obj", new NutMap("pet", null).setv("girls", new ArrayList<String>()));
+        El.eval(ctx, "obj.pet");
+        El.eval(ctx, "!!(obj.pet)");
+        assertTrue((Boolean)El.eval(ctx, "!!(obj.pet.name) == null"));
+        assertTrue((Boolean)El.eval(ctx, "!(!(!!(obj.pet.name) == null))"));
+        assertEquals("wendal", El.eval(ctx, "!!(obj.pet.name) ||| 'wendal'"));
+        assertEquals("dog", El.eval(ctx, "!!(obj.girls) ||| 'dog'"));
+    }
+    
+    @Test
+    public void test_issue_1475_1476() {
+        
+        Context context = Lang.context();
+        context.set("Math", Math.class);
+        
+        
+        //Queue<Object> rpn = new ShuntingYard().parseToRPN("Math.max(10, 0-11)");
+        //System.out.println(rpn);
+        
+//        Queue<Object> rpn = new ShuntingYard().parseToRPN("Math.max(0,-10)");
+//        System.out.println(rpn);
+        Object max = El.eval(context, "Math.max(0,-11)");
+        assertEquals(0, max);
+        
+        
+        assertEquals(0, El.eval(context, "Math.max(-1,0)"));
+        assertEquals(0, El.eval(context, "Math.max(0,-1)"));
+        assertEquals(0, El.eval(context, "Math.max(-0,-1)"));
+        
+
+        assertEquals(0, El.eval(context, "Math.max(-1,Math.max(-1,Math.max(-1,Math.max(-1,0))))"));
+        assertEquals(0, El.eval(context, "Math.max(Math.max(Math.max(Math.max(0,-1),-1),-1),-1)"));
+        assertEquals(0, El.eval(context, "Math.max(-Math.max(-Math.max(-Math.max(-0,-1),-1),-1),-1)"));
     }
 }

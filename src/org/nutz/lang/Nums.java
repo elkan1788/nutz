@@ -1,6 +1,9 @@
 package org.nutz.lang;
 
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.nutz.lang.util.Regex;
 
 /**
  * 关于数的一些帮助函数
@@ -8,6 +11,193 @@ import java.util.regex.Pattern;
  * @author zozoh(zozohtnt@gmail.com)
  */
 public abstract class Nums {
+
+    /**
+     * 对齐浮点数精度，超过精度四舍五入
+     * 
+     * @param n
+     *            浮点数
+     * @param dp
+     *            精度
+     * @return 对齐精度的浮点数
+     */
+    public static float precision(float n, int dp) {
+        if (0 == dp) {
+            return Math.round(n);
+        }
+        if (1 == dp) {
+            return Math.round(n * 10f) / 10f;
+        }
+        if (2 == dp) {
+            return Math.round(n * 100f) / 100f;
+        }
+        if (3 == dp) {
+            return Math.round(n * 1000f) / 1000f;
+        }
+        // 其他精度
+        float p = (float) Math.pow(10, dp);
+        return Math.round(n * p) / p;
+    }
+
+    /**
+     * 对齐双精度浮点精度，超过精度四舍五入
+     * 
+     * @param n
+     *            双精度浮点数
+     * @param dp
+     *            精度
+     * @return 对齐精度的双精度浮点数
+     */
+    public static double precision(double n, int dp) {
+        if (0 == dp) {
+            return Math.round(n);
+        }
+        if (1 == dp) {
+            return Math.round(n * 10) / 10.0;
+        }
+        if (2 == dp) {
+            return Math.round(n * 100) / 100.0;
+        }
+        if (3 == dp) {
+            return Math.round(n * 1000) / 1000.0;
+        }
+        // 其他精度
+        double p = Math.pow(10, dp);
+        return Math.round(n * p) / p;
+    }
+
+    /**
+     * @param a
+     *            数字
+     * @param b
+     *            数字
+     * @return 两个数的最大公约数 <code>greatest common divisor(gcd)</code>
+     */
+    public static int gcd(int a, int b) {
+        a = Math.round(a);
+        b = Math.round(b);
+        if (b != 0) {
+            return gcd(b, a % b);
+        }
+        return a;
+    }
+
+    /**
+     * @param list
+     *            一组整数
+     * @return 一组整数的最大公约数 <code>greatest common divisor(gcd)</code>
+     */
+    public static int gcds(int... list) {
+        // 没数
+        if (list.length == 0)
+            return Integer.MIN_VALUE;
+        // 一个是自己
+        if (list.length == 1) {
+            return list[0];
+        }
+        // 两个以上
+        int gcd = gcd(list[0], list[1]);
+        for (int i = 2; i < list.length; i++) {
+            gcd = gcd(gcd, list[i]);
+        }
+        // 返回
+        return gcd;
+    }
+
+    /**
+     * @param a
+     *            数字
+     * @param b
+     *            数字
+     * @return 两个数的最小公倍数 <code>lowest common multiple (LCM)</code>
+     */
+    public static int lcm(int a, int b) {
+        a = Math.round(a);
+        b = Math.round(b);
+        return a * b / gcd(a, b);
+    }
+
+    /**
+     * @param list
+     *            一组整数
+     * @return 一组整数的最小公倍数 <code>lowest common multiple (LCM)</code>
+     */
+    public static int lcms(int... list) {
+        // 没数
+        if (list.length == 0)
+            return Integer.MAX_VALUE;
+        // 一个是自己
+        if (list.length == 1) {
+            return list[0];
+        }
+        // 两个以上
+        int lcm = lcm(list[0], list[1]);
+        for (int i = 2; i < list.length; i++) {
+            lcm = lcm(lcm, list[i]);
+        }
+        // 返回
+        return lcm;
+    }
+
+    /**
+     * 计算尺寸
+     * 
+     * @param v
+     *            要计算的尺寸值的类型可以是
+     *            <ul>
+     *            <li>500 - 整数，直接返回
+     *            <li>.12 - 浮点，相当于一个百分比，可以大于 1.0
+     *            <li>"12%" - 百分比，相当于 .12
+     *            </ul>
+     * @param base
+     *            百分比的基数
+     * 
+     * @return 根据基数计算后的数值
+     */
+    public static double dimension(String v, double base) {
+        // 试试整型
+        try {
+            Integer nb = Integer.valueOf(v);
+            return nb.intValue();
+        }
+        catch (NumberFormatException e) {}
+
+        // 试试浮点
+        try {
+            Double nb = Double.valueOf(v);
+            return nb.doubleValue() * base;
+        }
+        catch (NumberFormatException e) {}
+
+        // 百分比
+        Pattern p = Regex.getPattern("^([0-9.]{1,})%$");
+        Matcher m = p.matcher(v);
+        if (m.find()) {
+            Double nb = Double.valueOf(m.group(1));
+            return (nb.doubleValue() / 100) * base;
+        }
+        // 靠不知道是啥
+        throw Lang.makeThrow("fail to dimension : " + v);
+    }
+
+    /**
+     * @see #dimension(String, double)
+     */
+    public static int dimension(String v, int base) {
+        return (int) (dimension(v, (double) base));
+    }
+
+    /**
+     * @param nbs
+     *            一组数字
+     * @return 数字之和
+     */
+    public static int sum(int... nbs) {
+        int re = 0;
+        for (int nb : nbs)
+            re += nb;
+        return re;
+    }
 
     /**
      * 一个数的字面量的进制和值
@@ -22,6 +212,13 @@ public abstract class Nums {
         public String val;
     }
 
+    /**
+     * @param str
+     *            数字的字符串
+     * @return 字符串的进制
+     * 
+     * @see org.nutz.lang.Nums.Radix
+     */
     public static Radix evalRadix(String str) {
         if (str.startsWith("0x"))
             return new Radix(str.substring(2), 16);
@@ -110,7 +307,7 @@ public abstract class Nums {
     }
 
     /**
-     * 将一个字符串变成一个布尔数组，如果字符串不符合规则，对应的元素为 false
+     * 将一个字符串变成一个双精度数数组，如果字符串不符合规则，对应的元素为 -1
      * 
      * @param str
      *            半角逗号分隔的数字字符串
@@ -142,7 +339,7 @@ public abstract class Nums {
         boolean[] ns = new boolean[ss.length];
         for (int i = 0; i < ns.length; i++) {
             try {
-                ns[i] = Pattern.matches("^(1|yes|true|on)$", ss[i].toLowerCase());
+                ns[i] = Regex.match("^(1|yes|true|on)$", ss[i].toLowerCase());
             }
             catch (NumberFormatException e) {
                 ns[i] = false;

@@ -5,6 +5,7 @@ import org.junit.runners.Suite;
 
 @RunWith(Suite.class)
 @Suite.SuiteClasses({LinkedArrayTest.class,
+                     LinkedByteBufferTest.class,
                      LinkedCharArrayTest.class,
                      LinkedIntArrayTest.class,
                      IntRangeTest.class,
@@ -15,5 +16,7 @@ import org.junit.runners.Suite;
                      DisksTest.class,
                      ContextTest.class,
                      NutMapTest.class,
-                     RegionTest.class})
+                     RegionTest.class,
+                     MultiLinePropertiesTest.class,
+                     ResidentStatusTest.class})
 public class AllUtil {}

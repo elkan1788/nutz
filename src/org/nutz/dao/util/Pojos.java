@@ -129,6 +129,12 @@ public abstract class Pojos {
 			switch (en.getPkType()) {
 			case ID:
 				Number id = null != obj ? ((Number) en.getIdField().getValue(obj)) : null;
+				if (id == null && (en.getNameField() != null)) {
+					String name = (String) en.getNameField().getValue(obj);
+					if (!Strings.isBlank(name)) {
+						return cndName(en, name);
+					}
+				}
 				return cndId(en, id);
 			case NAME:
 				String name = null != obj ? Strings.sNull(en.getNameField().getValue(obj), null) : null;
@@ -146,7 +152,7 @@ public abstract class Pojos {
 				if (Map.class.isAssignableFrom(en.getType())) {
 					return null; // Map形式的话,不一定需要主键嘛
 				}
-				throw Lang.makeThrow("Don't know how to make fetch key %s:'%s'", en.getType()
+				throw Lang.makeThrow("Don't know how to make fetch key %s:'%s', need any of @Id/@Name/@Pk", en.getType()
 																					.getName(), obj);
 			}
 		}
@@ -206,6 +212,7 @@ public abstract class Pojos {
 
 	public static List<MappingField> getFieldsForUpdate(Entity<?> en, FieldMatcher fm, Object refer) {
 		List<MappingField> re = new ArrayList<MappingField>(en.getMappingFields().size());
+        Object tmp = Lang.first(refer);
 		for (MappingField mf : en.getMappingFields()) {
 			if (mf.isPk()) {
 				if (en.getPkType() == PkType.ID && mf.isId())
@@ -217,13 +224,17 @@ public abstract class Pojos {
 			}
 			if (mf.isReadonly() || mf.isAutoIncreasement() || !mf.isUpdate())
 				continue;
-			else if (null != fm 
-			      && null != refer 
-			      && fm.isIgnoreNull() 
-			      && null == mf.getValue(Lang.first(refer)))
-				continue;
-			if (null == fm || fm.match(mf.getName()))
-				re.add(mf);
+			if (fm == null) {
+			    re.add(mf);
+			}
+			else if (tmp == null) {
+			    if (fm.match(mf.getName()))
+			        re.add(mf);
+			}
+			else {
+			    if (fm.match(mf, tmp))
+			        re.add(mf);
+			}
 		}
 		if (re.isEmpty() && log.isDebugEnabled())
 			log.debug("none field for update!");
@@ -234,14 +245,18 @@ public abstract class Pojos {
 														Pattern.CASE_INSENSITIVE);
 
 	public static String formatCondition(Entity<?> en, Condition cnd) {
-		if (null != cnd) {
-			String str = Strings.trim(cnd.toSql(en));
-			if (!ptn.matcher(str).find())
-				return "WHERE " + str;
-			return str;
-		}
-		return "";
+		return formatCondition(en, cnd, true);
 	}
+	
+	public static String formatCondition(Entity<?> en, Condition cnd, boolean top) {
+        if (null != cnd) {
+            String str = Strings.trim(cnd.toSql(en));
+            if (top && !ptn.matcher(str).find())
+                return "WHERE " + str;
+            return str;
+        }
+        return "";
+    }
 
 	public static Pojo pojo(JdbcExpert expert, Entity<?> en, SqlType type) {
 		Pojo pojo = expert.createPojo(type);

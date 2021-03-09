@@ -8,6 +8,7 @@ import org.nutz.log.Log;
 import org.nutz.log.Logs;
 import org.nutz.mvc.ActionContext;
 import org.nutz.mvc.ActionInfo;
+import org.nutz.mvc.Mvcs;
 import org.nutz.mvc.NutConfig;
 import org.nutz.mvc.View;
 import org.nutz.mvc.ViewModel;
@@ -25,13 +26,13 @@ public class ViewProcessor extends AbstractProcessor {
     public void init(NutConfig config, ActionInfo ai) throws Throwable {
         //需要特别提醒一下使用jsonView,但方法的返回值是String的!!
         if("json".equals(ai.getOkView()) && String.class.equals(ai.getMethod().getReturnType())) {
-            log.warn("Not a good idea : Return String ,and using JsonView!! (Using @Ok(\"raw\") or return map/list/pojo)--> " + Lang.simpleMetodDesc(ai.getMethod()));
+            log.warn("Not a good idea : Return String ,and using JsonView!! (Using @Ok(\"raw\") or return map/list/pojo)--> " + Lang.simpleMethodDesc(ai.getMethod()));
         }
         view = evalView(config, ai, ai.getOkView());
 
         Class<?>[] params = ai.getMethod().getParameterTypes();
         for (int i = 0; i < params.length; i++) {
-            if (params[i].isAssignableFrom(ViewModel.class)) {
+            if (ViewModel.class.isAssignableFrom(params[i])) {
                 index = i;
                 break;
             }
@@ -43,16 +44,27 @@ public class ViewProcessor extends AbstractProcessor {
     public void process(ActionContext ac) throws Throwable {
         Object re = ac.getMethodReturn();
         Object err = ac.getError();
+        if (Mvcs.SKIP_COMMITTED && ac.getResponse().isCommitted()) {
+            log.info("Response is committed, skip mvc view render");
+            doNext(ac);
+            return;
+        }
         if (re != null && re instanceof View) {
             if (re instanceof ViewWrapper)
                 putRequestAttribute(ac.getRequest(), ((ViewWrapper)re).getData());
             ((View) re).render(ac.getRequest(), ac.getResponse(), err);
         } else {
-            if (index > -1 && re == null && err == null) {
-                re = ac.getMethodArgs()[index];
+            if (view instanceof ViewZone) {
+                if (index > -1)
+                    putRequestAttribute(ac.getRequest(), ac.getMethodArgs()[index]);
+                view.render(ac.getRequest(), ac.getResponse(), re);
+            } else {
+                if (index > -1 && re == null && err == null) {
+                    re = ac.getMethodArgs()[index];
+                }
+                putRequestAttribute(ac.getRequest(), null == re ? err : re);
+                view.render(ac.getRequest(), ac.getResponse(), null == re ? err : re);
             }
-            putRequestAttribute(ac.getRequest(), null == re ? err : re);
-            view.render(ac.getRequest(), ac.getResponse(), null == re ? err : re);
         }
         doNext(ac);
     }

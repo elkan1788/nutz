@@ -7,6 +7,7 @@ import static org.nutz.ioc.json.Utils.J;
 
 import java.io.File;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -26,6 +27,8 @@ import org.nutz.json.Json;
 import org.nutz.json.JsonFormat;
 import org.nutz.lang.Streams;
 import org.nutz.lang.util.NutMap;
+import org.nutz.resource.NutResource;
+import org.nutz.resource.Scans;
 
 public class SimpleJsonIocTest {
 
@@ -51,6 +54,7 @@ public class SimpleJsonIocTest {
         assertEquals("b", obj.getStrss()[0][1]);
         assertEquals("c", obj.getStrss()[1][0]);
         assertEquals("d", obj.getStrss()[1][1]);
+    	ioc.depose();
     }
 
     @Test
@@ -78,6 +82,7 @@ public class SimpleJsonIocTest {
         IocLoader loader = new JsonLoader("org/nutz/ioc/json/empty.js");
         Ioc ioc = new NutIoc(loader);
         assertEquals(0, ioc.getNames().length);
+    	ioc.depose();
     }
 
     @Test
@@ -291,5 +296,15 @@ public class SimpleJsonIocTest {
         NutMap map = new NutMap();
         map.put("key", Double.NaN);
         assertEquals("{\"key\":null}", Json.toJson(map, JsonFormat.tidy()));
+    }
+    
+    @Test
+    public void test_factory_by_factory() {
+        List<NutResource> res = Scans.me().scan("org/nutz/ioc/json/issue1304/");
+        System.out.println(res.get(0).getClass());
+        JsonLoader loader = new JsonLoader("org/nutz/ioc/json/issue1304/");
+        Ioc ioc = new NutIoc(loader);
+        ioc.get(null, "c");
+        ioc.depose();
     }
 }

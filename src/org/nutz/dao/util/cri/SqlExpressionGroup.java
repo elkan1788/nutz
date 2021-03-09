@@ -1,20 +1,11 @@
 package org.nutz.dao.util.cri;
 
-import static org.nutz.dao.util.cri.Exps.eq;
-import static org.nutz.dao.util.cri.Exps.gt;
-import static org.nutz.dao.util.cri.Exps.gte;
-import static org.nutz.dao.util.cri.Exps.inInt;
-import static org.nutz.dao.util.cri.Exps.inLong;
-import static org.nutz.dao.util.cri.Exps.inStr;
-import static org.nutz.dao.util.cri.Exps.inSql;
-import static org.nutz.dao.util.cri.Exps.isNull;
-import static org.nutz.dao.util.cri.Exps.like;
-import static org.nutz.dao.util.cri.Exps.lt;
-import static org.nutz.dao.util.cri.Exps.lte;
+import static org.nutz.dao.util.cri.Exps.*;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import org.nutz.dao.Cnd;
 import org.nutz.dao.entity.Entity;
 import org.nutz.dao.impl.sql.pojo.AbstractPItem;
 import org.nutz.dao.jdbc.ValueAdaptor;
@@ -27,9 +18,9 @@ import org.nutz.log.Logs;
  */
 public class SqlExpressionGroup extends AbstractPItem implements SqlExpression {
 
-    private List<SqlExpression> exps;
+    private static final long serialVersionUID = 1L;
 
-    private boolean top;
+    private List<SqlExpression> exps;
     
     protected boolean not;
     
@@ -37,7 +28,6 @@ public class SqlExpressionGroup extends AbstractPItem implements SqlExpression {
 
     public SqlExpressionGroup() {
         exps = new ArrayList<SqlExpression>(); // 默认就是10个，能放5个条件，够了吧
-        top = true;
     }
 
     public SqlExpressionGroup and(String name, String op, Object value) {
@@ -96,14 +86,46 @@ public class SqlExpressionGroup extends AbstractPItem implements SqlExpression {
         return and(inLong(name, ids));
     }
 
+    public SqlExpressionGroup andInArray(String name, long[] ids) {
+    	return and(inLong(name, ids));
+    }
+    
+    public SqlExpressionGroup andInList(String name, List<Long> ids) {
+    	return and(inLong(name, ids.toArray(new Long[ids.size()])));
+    }
+    
     public SqlExpressionGroup andInIntArray(String name, int... ids) {
         return and(inInt(name, ids));
+    }
+    
+    public SqlExpressionGroup andInIntArray2(String name, int[] ids) {
+    	return and(inInt(name, ids));
+    }
+    
+    public SqlExpressionGroup andInIntList(String name, List<Integer> ids) {
+    	return and(inInt(name, ids.toArray(new Integer[ids.size()])));
     }
 
     public SqlExpressionGroup andIn(String name, String... names) {
         return and(inStr(name, names));
     }
+    
+    public SqlExpressionGroup andInStrArray(String name, String[] names) {
+    	return and(inStr(name, names));
+    }
+    
+    public SqlExpressionGroup andInStrList(String name, List<String> names) {
+    	return and(inStr(name, names.toArray(new String[names.size()])));
+    }
 
+    /**
+     * 用法
+     * cnd.where().andInBySql("dept_id","SELECT id FROM sys_dept  WHERE FIND_IN_SET ('%s',ancestors)", deptId)；
+     * @param name 查询条件
+     * @param subSql sql
+     * @param args 参数
+     * @return
+     */
     public SqlExpressionGroup andInBySql(String name, String subSql, Object... args) {
         return and(inSql(name, subSql, args));
     }
@@ -111,17 +133,49 @@ public class SqlExpressionGroup extends AbstractPItem implements SqlExpression {
     public SqlExpressionGroup andNotInBySql(String name, String subSql, Object... args) {
         return and(inSql(name, subSql, args).not());
     }
+    
+    public SqlExpressionGroup andInBySql2(String name, String subSql, Object... values) {
+        return and(inSql2(name, subSql, values));
+    }
+
+    public SqlExpressionGroup andNotInBySql2(String name, String subSql, Object... values) {
+        return and(inSql2(name, subSql, values).not());
+    }
 
     public SqlExpressionGroup andNotIn(String name, long... ids) {
         return and(inLong(name, ids).not());
     }
-
+    
+    public SqlExpressionGroup andNotInArray(String name, long[] ids) {
+    	return and(inLong(name, ids).not());
+    }
+    
+    public SqlExpressionGroup andNotInList(String name, List<Long> ids) {
+    	return and(inLong(name, ids.toArray(new Long[ids.size()])).not());
+    }
+    
     public SqlExpressionGroup andNotIn(String name, int... ids) {
         return and(inInt(name, ids).not());
+    }
+    
+    public SqlExpressionGroup andNotInArray(String name, int[] ids) {
+    	return and(inInt(name, ids).not());
+    }
+    
+    public SqlExpressionGroup andNotInIntList(String name, List<Integer> ids) {
+    	return and(inInt(name, ids.toArray(new Integer[ids.size()])).not());
     }
 
     public SqlExpressionGroup andNotIn(String name, String... names) {
         return and(inStr(name, names).not());
+    }
+    
+    public SqlExpressionGroup andNotInArray(String name, String[] names) {
+    	return and(inStr(name, names).not());
+    }
+    
+    public SqlExpressionGroup andNotInStrList(String name, List<String> names) {
+    	return and(inStr(name, names.toArray(new String[names.size()])).not());
     }
 
     public SqlExpressionGroup andLike(String name, String value) {
@@ -169,8 +223,11 @@ public class SqlExpressionGroup extends AbstractPItem implements SqlExpression {
     }
 
     public SqlExpressionGroup or(SqlExpression exp) {
-    	if (exp == null)
-    		throw new NullPointerException("exp is null!");
+        if (exp == null) {
+            if (log.isTraceEnabled())
+                log.trace("ignore null SqlExpression");
+            return this;
+        }
         if (!exps.isEmpty())
             _add(new Static("OR"));
         return _add(exp);
@@ -227,6 +284,14 @@ public class SqlExpressionGroup extends AbstractPItem implements SqlExpression {
 
     public SqlExpressionGroup orNotInBySql(String name, String subSql, Object... args) {
         return or(inSql(name, subSql, args).not());
+    }
+
+    public SqlExpressionGroup orInBySql2(String name, String subSql, Object... values) {
+        return or(inSql2(name, subSql, values));
+    }
+
+    public SqlExpressionGroup orNotInBySql2(String name, String subSql, Object... values) {
+        return or(inSql2(name, subSql, values).not());
     }
 
     public SqlExpressionGroup orNotIn(String name, long... ids) {
@@ -360,11 +425,31 @@ public class SqlExpressionGroup extends AbstractPItem implements SqlExpression {
         return new ArrayList<SqlExpression>(exps);
     }
     
-    public void setTop(boolean top) {
-        this.top = top;
-    }
-    
     public List<SqlExpression> getExps() {
 		return exps;
 	}
+    
+    public SqlExpressionGroup clone(){
+        SqlExpressionGroup seg = new SqlExpressionGroup();
+        seg.exps = cloneExps();
+        seg.pojo = this.pojo;
+        seg.top = this.top;
+        return seg;
+    }
+    
+    /**
+     * 若value为null/空白字符串/空集合/空数组,则本条件不添加.
+     * @see Cnd#and(String, String, Object)
+     */
+    public SqlExpressionGroup andEX(String name, String op, Object value) {
+        return and(Cnd.expEX(name, op, value));
+    }
+    
+    /**
+     * 若value为null/空白字符串/空集合/空数组,则本条件不添加.
+     * @see Cnd#or(String, String, Object)
+     */
+    public SqlExpressionGroup orEX(String name, String op, Object value) {
+        return or(Cnd.expEX(name, op, value));
+    }
 }

@@ -8,6 +8,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
 import java.io.Reader;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ import java.util.zip.ZipFile;
 import org.nutz.lang.util.Callback;
 import org.nutz.lang.util.ClassTools;
 import org.nutz.lang.util.Disks;
+import org.nutz.lang.util.Regex;
 import org.nutz.log.Logs;
 
 /**
@@ -297,6 +299,7 @@ public class Files {
     public static String getSuffixName(String path) {
         if (null == path)
             return null;
+        path = path.replace('\\', '/');
         int p0 = path.lastIndexOf('.');
         int p1 = path.lastIndexOf('/');
         if (-1 == p0 || p0 < p1)
@@ -323,6 +326,7 @@ public class Files {
     public static String getSuffix(String path) {
         if (null == path)
             return null;
+        path = path.replace('\\', '/');
         int p0 = path.lastIndexOf('.');
         int p1 = path.lastIndexOf('/');
         if (-1 == p0 || p0 < p1)
@@ -344,7 +348,7 @@ public class Files {
         Enumeration<? extends ZipEntry> en = zip.entries();
         while (en.hasMoreElements()) {
             ZipEntry ze = en.nextElement();
-            if (null == regex || ze.getName().matches(regex))
+            if (null == regex || Regex.match(regex, ze.getName()))
                 list.add(ze);
         }
         return list.toArray(new ZipEntry[list.size()]);
@@ -423,7 +427,8 @@ public class Files {
             }
         }
         if (!f.isDirectory())
-            throw Lang.makeThrow("'%s' should be a directory or don't have permission to create it!", path);
+            throw Lang.makeThrow("'%s' should be a directory or don't have permission to create it!",
+                                 path);
         return f;
     }
 
@@ -500,12 +505,14 @@ public class Files {
         /**
          * 仅文件
          */
-        FILE, /**
-               * 仅目录
-               */
-        DIR, /**
-              * 文件和目录
-              */
+        FILE,
+        /**
+         * 仅目录
+         */
+        DIR,
+        /**
+         * 文件和目录
+         */
         ALL
     }
 
@@ -836,13 +843,15 @@ public class Files {
         if (!dir.exists())
             return false;
         File[] fs = dir.listFiles();
-        for (File f : fs) {
-            if (f.isFile())
-                Files.deleteFile(f);
-            else if (f.isDirectory())
-                Files.deleteDir(f);
+        if (fs != null) {
+            for (File f : fs) {
+                if (f.isFile())
+                    Files.deleteFile(f);
+                else if (f.isDirectory())
+                    Files.deleteDir(f);
+            }
         }
-        return false;
+        return true;
     }
 
     /**
@@ -863,7 +872,7 @@ public class Files {
      *            目标文件
      * @param count
      *            要 copy 的字节数，0 表示什么都不 copy， -1 表示 copy 全部数据
-     * @return
+     * @return 是否成功
      * @throws IOException
      */
     public static boolean copyFile(File src, File target, long count) throws IOException {
@@ -1066,6 +1075,30 @@ public class Files {
     }
 
     /**
+     * 获取一个文件对象绝对路径，并且是跨平台统一的格式。即，分隔符均为<code>/</code>
+     * 
+     * @param f
+     *            文件对象
+     * @return 格式化后的路径，所有分隔符会统一替换为 <code>/</code>
+     * @see #formedPath(String)
+     */
+    public static String getAbsPath(File f) {
+        return formedPath(f.getAbsolutePath());
+    }
+
+    /**
+     * @param path
+     *            路径
+     * @return 格式化后的路径，所有分隔符会统一替换为 <code>/</code>
+     */
+    public static String formedPath(String path) {
+        if (null == path) {
+            return null;
+        }
+        return path.replace('\\', '/');
+    }
+
+    /**
      * 将一个目录下的特殊名称的目录彻底删除，比如 '.svn' 或者 '.cvs'
      * 
      * @param dir
@@ -1076,6 +1109,8 @@ public class Files {
      */
     public static void cleanAllFolderInSubFolderes(File dir, String name) throws IOException {
         File[] files = dir.listFiles();
+        if (files == null)
+            return;
         for (File d : files) {
             if (d.isDirectory())
                 if (d.getName().equalsIgnoreCase(name))
@@ -1272,6 +1307,43 @@ public class Files {
         }
         finally {
             Streams.safeClose(br);
+        }
+    }
+
+    public static int readRange(File f, int pos, byte[] buf, int at, int len) {
+        try {
+            if (f == null || !f.exists())
+                return 0;
+            long fsize = f.length();
+            if (pos > fsize)
+                return 0;
+            len = Math.min(len, buf.length - at);
+            if (pos + len > fsize) {
+                len = (int) (fsize - pos);
+            }
+            RandomAccessFile raf = new RandomAccessFile(f, "r");
+            raf.seek(pos);
+            raf.readFully(buf, at, len);
+            raf.close();
+            return len;
+        }
+        catch (IOException e) {
+            return -1;
+        }
+    }
+
+    public static int writeRange(File f, int pos, byte[] buf, int at, int len) {
+        try {
+            if (f == null || !f.exists())
+                return 0;
+            RandomAccessFile raf = new RandomAccessFile(f, "rw");
+            raf.seek(pos);
+            raf.write(buf, at, len);
+            raf.close();
+            return len;
+        }
+        catch (IOException e) {
+            return -1;
         }
     }
 }

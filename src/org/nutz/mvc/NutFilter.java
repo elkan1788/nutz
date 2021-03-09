@@ -15,6 +15,7 @@ import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.nutz.conf.NutConf;
 import org.nutz.lang.Lang;
 import org.nutz.lang.Strings;
 import org.nutz.lang.util.Context;
@@ -31,15 +32,15 @@ import org.nutz.mvc.config.FilterNutConfig;
  */
 public class NutFilter implements Filter {
 	
-	private static final Log log = Logs.get();
+	protected static Log log;
 
     protected ActionHandler handler;
 
-    private static final String IGNORE = "^.+\\.(jsp|png|gif|jpg|js|css|jspx|jpeg|swf|ico)$";
+    protected static final String IGNORE = "^.+\\.(jsp|png|gif|jpg|js|css|jspx|jpeg|swf|ico|map)$";
 
     protected Pattern ignorePtn;
 
-    private String selfName;
+    protected String selfName;
 
     protected SessionProvider sp;
 
@@ -59,8 +60,21 @@ public class NutFilter implements Filter {
     protected Set<String> exclusionPaths;
     
     protected ServletContext sc;
-
+    
     public void init(FilterConfig conf) throws ServletException {
+    	try {
+    	    if ("disable".equals(conf.getInitParameter("fast-class"))) {
+    	        NutConf.USE_FASTCLASS = false;
+    	    }
+    		_init(conf);
+    	} finally {
+    		Mvcs.set(null, null, null);
+            Mvcs.ctx().removeReqCtx();
+    	}
+    }
+
+    public void _init(FilterConfig conf) throws ServletException {
+        log = Logs.getLog(getClass());
     	sc = conf.getServletContext();
     	Mvcs.setServletContext(sc);
     	if ("true".equals(Strings.sNull(conf.getInitParameter("skip-mode"), "false").toLowerCase())) {
@@ -112,7 +126,6 @@ public class NutFilter implements Filter {
         	}
         }
         sp = config.getSessionProvider();
-        Mvcs.ctx().reqThreadLocal.set(null);
     }
 
     public void destroy() {
@@ -124,15 +137,16 @@ public class NutFilter implements Filter {
             handler.depose();
         Mvcs.close();
         Mvcs.setServletContext(null);
-        Mvcs.ctx().reqThreadLocal.set(null);
+        Mvcs.set(null, null, null);
+        Mvcs.ctx().removeReqCtx();
     }
     
     /**
      * 过滤请求. 过滤顺序(ignorePtn,exclusionsSuffix,exclusionsPrefix,exclusionPaths)
-     * @param matchUrl
-     * @return
-     * @throws IOException
-     * @throws ServletException
+     * @param matchUrl 待匹配URL
+     * @return 需要排除则返回true
+     * @throws IOException 不太可能抛出
+     * @throws ServletException 不太可能抛出
      */
     protected boolean isExclusion(String matchUrl) throws IOException, ServletException {
     	if (ignorePtn != null && ignorePtn.matcher(matchUrl).find()) {
@@ -148,18 +162,16 @@ public class NutFilter implements Filter {
 	    		return true;
     		}
     	}
-    	if (exclusionPaths != null) {
-    		for (String exclusionPath : exclusionPaths) {
-				if (exclusionPath.equals(matchUrl)) {
-		    		return true;
-				}
-			}
+    	if (exclusionPaths != null && exclusionPaths.contains(matchUrl)) {
+    		return true;
     	}
     	return false;
     }
 
     public void doFilter(final ServletRequest req, final ServletResponse resp, final FilterChain chain)
             throws IOException, ServletException {
+        if (!Mvcs.DISABLE_X_POWERED_BY)
+            ((HttpServletResponse)resp).setHeader("X-Powered-By", Mvcs.X_POWERED_BY);
     	ServletContext prCtx = Mvcs.getServletContext();
     	Mvcs.setServletContext(sc);
     	if (proxyFilter != null) {
@@ -168,9 +180,16 @@ public class NutFilter implements Filter {
     	}
         HttpServletRequest request = (HttpServletRequest)req;
         HttpServletResponse response = (HttpServletResponse)resp;
-        RequestPath path = Mvcs.getRequestPathObject(request);
-        String matchUrl = path.getUrl();
+        String matchUrl = request.getServletPath() + Strings.sBlank(request.getPathInfo());
         
+        String markKey = "nutz_ctx_mark";
+        Integer mark = (Integer) req.getAttribute(markKey);
+    	if (mark != null) {
+    		req.setAttribute(markKey, mark+1);
+    	} else {
+    		req.setAttribute(markKey, 0);
+    	}
+    	
         String preName = Mvcs.getName();
         Context preContext = Mvcs.resetALL();
         try {
@@ -186,17 +205,20 @@ public class NutFilter implements Filter {
             nextChain(request, response, chain);
         }
         finally {
-            Mvcs.resetALL();
             //仅当forward/incule时,才需要恢复之前设置
-            if (null != (request.getAttribute("javax.servlet.forward.request_uri"))) {
-            	if (prCtx != sc)
-            		Mvcs.setServletContext(prCtx);
-                if (preName != null)
-                    Mvcs.set(preName, request, response);
-                if (preContext != null)
-                    Mvcs.ctx().reqThreadLocal.set(preContext);
+            if (mark != null) {
+                Mvcs.ctx().reqCtx(preContext);
+            	Mvcs.setServletContext(prCtx);
+                Mvcs.set(preName, request, response);
+                if (mark == 0) {
+                	req.removeAttribute(markKey);
+                } else {
+                	req.setAttribute(markKey, mark - 1);
+                }
             } else {
-                Mvcs.ctx().reqThreadLocal.set(null);
+            	Mvcs.set(null, null, null);
+                Mvcs.ctx().removeReqCtx();
+                Mvcs.setServletContext(null);
             }
         }
     }

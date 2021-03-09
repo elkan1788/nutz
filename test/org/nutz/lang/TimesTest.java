@@ -2,7 +2,10 @@ package org.nutz.lang;
 
 import static org.junit.Assert.assertEquals;
 
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Locale;
 
 import org.junit.Test;
 
@@ -11,6 +14,44 @@ public class TimesTest {
     private static void AD(String b, String e, Date[] ds) {
         assertEquals(b, Times.sDT(ds[0]));
         assertEquals(e, Times.sDT(ds[1]));
+    }
+
+    @Test
+    public void test_parse_ti_by_sec() {
+        _assert_parseSec(-86400, 0, 0, 0, 0);
+        _assert_parseSec(3612, 1, 0, 12, 0);
+        _assert_parseSec(-1, 23, 59, 59, 0);
+        _assert_parseSec(0, 0, 0, 0, 0);
+        _assert_parseSec(86400, 0, 0, 0, 0);
+        _assert_parseSec(86399, 23, 59, 59, 0);
+        _assert_parseSec(86398, 23, 59, 58, 0);
+    }
+
+    @Test
+    public void test_parse_str() {
+        _assert_parseTime("12:59", 12, 59, 0, 0);
+        _assert_parseTime("12:59:03", 12, 59, 3, 0);
+        _assert_parseTime("12:59:03.120", 12, 59, 3, 120);
+    }
+
+    private void _assert_parseSec(int sec, int h, int m, int s, int ms) {
+        Times.TmInfo ti = Times.Ti(sec);
+        assertEquals(h, ti.hour);
+        assertEquals(m, ti.minute);
+        assertEquals(s, ti.second);
+        assertEquals(ms, ti.millisecond);
+        assertEquals(h * 3600 + m * 60 + s, ti.value);
+        assertEquals(h * 3600000 + m * 60000 + s * 1000 + ms, ti.valueInMillisecond);
+    }
+
+    private void _assert_parseTime(String ts, int h, int m, int s, int ms) {
+        Times.TmInfo ti = Times.Ti(ts);
+        assertEquals(h, ti.hour);
+        assertEquals(m, ti.minute);
+        assertEquals(s, ti.second);
+        assertEquals(ms, ti.millisecond);
+        assertEquals(h * 3600 + m * 60 + s, ti.value);
+        assertEquals(h * 3600000 + m * 60000 + s * 1000 + ms, ti.valueInMillisecond);
     }
 
     /**
@@ -87,4 +128,33 @@ public class TimesTest {
         assertEquals(1000, Times.toMillis("1000"));
     }
 
+    @Test
+    public void test_end_in_month() throws Exception {
+        String s0430 = "2016-04-30 00:00:00";
+        Date d0430 = Times.D(s0430);
+        String s0430_2 = Times.sDT(d0430);
+        assertEquals(s0430, s0430_2);
+    }
+
+    @Test
+    public void test_start_in_month() throws Exception {
+        String s0501 = "2016-05-01 00:00:00";
+        Date d0501 = Times.D(s0501);
+        String s0501_2 = Times.sDT(d0501);
+        assertEquals(s0501, s0501_2);
+    }
+
+    @Test
+    public void long_long_time() throws ParseException {
+        String fmt = "EEE MMM dd yyyy HH:mm:ss 'GMT'Z (z)";
+        String time = "Thu May 25 2017 07:16:32 GMT+0800 (CST)";
+        new SimpleDateFormat(fmt, new Locale("en")).parse(time);
+        Times.parse(new SimpleDateFormat(fmt, new Locale("en")), time);
+    }
+
+    @Test
+    public void test_next_day()  {
+        Date s = Times.nextDay(new Date(),1);
+        System.out.println(Times.format("yyyy-MM-dd HH:mm:ss",s));
+    }
 }

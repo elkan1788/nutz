@@ -1,7 +1,6 @@
 package org.nutz.mvc.view;
 
 import java.awt.image.BufferedImage;
-import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -11,6 +10,7 @@ import java.io.Reader;
 import java.io.Writer;
 import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +39,7 @@ import org.nutz.mvc.View;
  * <li><b>InputStream</b> - 按二进制方式写入响应流，并关闭 InputStream
  * <li><b>char[]</b> - 按文本方式写入HTTP响应流
  * <li><b>Reader</b> - 按文本方式写入HTTP响应流，并关闭 Reader
+ * <li><b>BufferedImage</b> - 按图片方式写入HTTP响应流，并关闭 Reader
  * <li><b>默认的</b> - 直接将对象 toString() 后按文本方式写入HTTP响应流
  * </ol>
  * <p>
@@ -48,6 +49,13 @@ import org.nutz.mvc.View;
  * <li><b>html</b> - 表示 <b>text/html</b>
  * <li><b>htm</b> - 表示 <b>text/html</b>
  * <li><b>stream</b> - 表示 <b>application/octet-stream</b>
+ * <li><b>js</b> - 表示 <b>application/javascript</b>
+ * <li><b>json</b> - 表示 <b>application/json</b>
+ * <li><b>pdf</b> -- 表示<b>application/pdf</b>
+ * <li><b>jpeg</b> - 表示 <b>image/jpeg</b> 返回值是BufferedImage对象时自动转二进制流,质量为0.8f
+ * <li><b>jpg</b> - 表示 <b>image/jpeg</b> 返回值是BufferedImage对象时自动转二进制流,质量为0.8f
+ * <li><b>png</b> - 表示 <b>image/png</b> 返回值是BufferedImage对象时自动转二进制流
+ * <li><b>webp</b> - 表示 <b>application/webp</b> 返回值是BufferedImage对象时自动转二进制流
  * <li><b>默认的</b>(即 '@Ok("raw")' ) - 将采用 <b>ContentType=text/plain</b>
  * </ul>
  * 
@@ -133,9 +141,9 @@ public class RawView implements View {
                 // 暂时只实现了单range
                 if (rs.size() != 1) {
                     // TODO 完成多range的下载
-                    log.info("multipart/byteranges is NOT support yet");
-                    resp.setStatus(416);
-                    return;
+                    //log.info("multipart/byteranges is NOT support yet");
+                    //resp.setStatus(416);
+                    rs = rs.subList(0, 1);
                 }
                 long totolSize = 0;
                 for (RangeRange rangeRange : rs) {
@@ -199,15 +207,32 @@ public class RawView implements View {
         contentTypeMap.put("webp", "image/webp");
     }
 
-    public static class RangeRange {
+    public static class RangeRange implements Comparable<RangeRange> {
         public RangeRange(long start, long end) {
             this.start = start;
             this.end = end;
         }
 
-        long start;
-        long end = -1;
+        public long start;
+        public long end = -1;
 
+        public String toString(int maxLen) {
+            return String.format("bytes %d-%d/%d", start, end - 1, maxLen);
+        }
+        
+        public boolean equals(Object obj) {
+            if (obj == null || !(obj instanceof RangeRange))
+                return false;
+            return this.start == ((RangeRange)obj).start && this.end == ((RangeRange)obj).end;
+        }
+
+        public int compareTo(RangeRange other) {
+            if (this.start > other.start)
+                return 1;
+            if (this.start < other.start)
+                return -1;
+            return 0;
+        }
     }
 
     public static final boolean parseRange(String rangeStr, List<RangeRange> rs, long maxSize) {
@@ -267,15 +292,26 @@ public class RawView implements View {
                 return false;
             }
         }
+        if (rs.size() > 1)
+            Collections.sort(rs);
         return !rs.isEmpty();
+    }
+    
+    public static void writeDownloadRange(DataInputStream in,
+                                          OutputStream out,
+                                          RangeRange rangeRange) {
+        writeDownloadRange(in, out, rangeRange, null);
     }
 
     public static void writeDownloadRange(DataInputStream in,
                                           OutputStream out,
-                                          RangeRange rangeRange) {
+                                          RangeRange rangeRange,
+                                          RangeRange preRangeRange) {
         try {
             if (rangeRange.start > 0) {
                 long start = rangeRange.start;
+                if (preRangeRange != null)
+                    start -= preRangeRange.end;
                 while (start > 0) {
                     if (start > big4G) {
                         start -= big4G;
@@ -287,14 +323,13 @@ public class RawView implements View {
                 }
             }
             byte[] buf = new byte[8192];
-            BufferedInputStream bin = new BufferedInputStream(in);
             long pos = rangeRange.start;
             int len = 0;
             while (pos < rangeRange.end) {
                 if (rangeRange.end - pos > 8192) {
-                    len = bin.read(buf);
+                    len = in.read(buf);
                 } else {
-                    len = bin.read(buf, 0, (int) (rangeRange.end - pos));
+                    len = in.read(buf, 0, (int) (rangeRange.end - pos));
                 }
                 if (len == -1) {// 有时候,非常巧合的,文件已经读取完,就悲剧开始了...
                     break;
